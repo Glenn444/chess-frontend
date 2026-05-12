@@ -5,8 +5,6 @@ import { useAuth } from '../lib/authStore'
 import { useEventStore } from '../lib/eventStore'
 import Avatar from '../components/Avatar'
 import Icon from '../components/icons/Icon'
-import FloatingNav from '../components/FloatingNav'
-
 const typeColors: Record<string, string> = {
   Tournament: 'var(--color-amber)',
   Playtest: 'var(--color-blue)',
@@ -56,7 +54,7 @@ export default function EventDetail() {
   }
 
   return (
-    <div className="fade-in" style={{ minHeight: '100vh', background: 'var(--color-bg-base)', paddingBottom: user ? 0 : 80 }}>
+    <div className="fade-in" style={{ minHeight: '100vh', background: 'var(--color-bg-base)', paddingBottom: 80 }}>
       {/* Back nav */}
       <div style={{
         padding: isMobile ? '14px 16px' : '16px 28px',
@@ -238,7 +236,6 @@ export default function EventDetail() {
         </div>
       </main>
 
-      {!user && <FloatingNav />}
     </div>
   )
 }

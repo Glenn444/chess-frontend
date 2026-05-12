@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useIsMobile } from '../lib/useIsMobile'
 import { useAuth } from '../lib/authStore'
 import { useEventStore } from '../lib/eventStore'
-import FloatingNav from '../components/FloatingNav'
 import logoPng from '../assets/chesske-logo.png'
 
 const typeColors: Record<string, string> = {
@@ -206,7 +205,6 @@ export default function Events() {
         </div>
       </main>
 
-      {!user && <FloatingNav />}
     </div>
   )
 }
