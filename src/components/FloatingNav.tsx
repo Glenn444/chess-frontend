@@ -3,7 +3,7 @@ import Icon from './icons/Icon'
 
 const LINKS = [
   { to: '/', label: 'Home', icon: 'user' as const },
-  { to: '/announcements', label: 'Events', icon: 'zap' as const },
+  { to: '/events', label: 'Events', icon: 'zap' as const },
   { to: '/login', label: 'Log in', icon: 'lock' as const },
   { to: '/register', label: 'Sign up', icon: 'plus' as const },
 ]
@@ -19,13 +19,14 @@ function PadlockIcon({ size = 18, active = false }: { size?: number; active?: bo
   )
 }
 
-const GUEST_ROUTES = ['/', '/announcements', '/login', '/register']
+const GUEST_ROUTES = ['/', '/events', '/announcements', '/login', '/register']
 
 export default function FloatingNav() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  if (!GUEST_ROUTES.includes(location.pathname)) return null
+  const isGuest = GUEST_ROUTES.includes(location.pathname) || location.pathname.startsWith('/events/')
+  if (!isGuest) return null
 
   return (
     <div style={{

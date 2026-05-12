@@ -89,7 +89,7 @@ export default function Landing() {
           <span className="font-display" style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.3 }}>Chesske</span>
         </div>
         <div className="nav-links" style={{ display: isMobile ? 'none' : 'flex', alignItems: 'center', gap: 22, color: 'var(--color-text-secondary)', fontSize: 14 }}>
-          <a onClick={() => navigate('/announcements')} style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', textDecoration: 'none' }}>Events</a>
+          <a onClick={() => navigate('/events')} style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', textDecoration: 'none' }}>Events</a>
           {user ? (
             <button onClick={() => navigate('/dashboard')} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '8px 18px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', fontSize: 14 }}>Dashboard</button>
           ) : (
@@ -105,7 +105,7 @@ export default function Landing() {
       </nav>
       {navOpen && (
         <div className="nav-mobile-menu" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 24px 24px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-raised)' }}>
-          <a style={{ color: 'var(--color-text-secondary)', fontSize: 15, cursor: 'pointer' }} onClick={() => { setNavOpen(false); navigate('/announcements') }}>Events</a>
+          <a style={{ color: 'var(--color-text-secondary)', fontSize: 15, cursor: 'pointer' }} onClick={() => { setNavOpen(false); navigate('/events') }}>Events</a>
           {user ? (
             <button onClick={() => { setNavOpen(false); navigate('/dashboard') }} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '10px 18px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer' }}>Dashboard</button>
           ) : (

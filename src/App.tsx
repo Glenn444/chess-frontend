@@ -10,7 +10,9 @@ import { Login, Register } from './pages/Auth'
 import Dashboard from './pages/Dashboard'
 import Matchmaking from './pages/Matchmaking'
 import GameScreen from './pages/GameScreen'
-import Announcements from './pages/Announcements'
+import Events from './pages/Events'
+import EventDetail from './pages/EventDetail'
+import Admin from './pages/Admin'
 
 function SplashScreen() {
   return (
@@ -52,7 +54,10 @@ export default function App() {
     <PieceThemeProvider>
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/announcements" element={<Announcements />} />
+        <Route path="/events" element={<Events />} />
+        <Route path="/events/:id" element={<EventDetail />} />
+        <Route path="/announcements" element={<Navigate to="/events" replace />} />
+        <Route path="/admin" element={<Admin />} />
         <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
         <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
