@@ -18,5 +18,11 @@ export const registerSchema = z.object({
   rating: z.string(),
 })
 
+export const adminLoginSchema = z.object({
+  username: z.string().min(1, 'Username is required'),
+  password: z.string().min(1, 'Password is required'),
+})
+
 export type LoginForm = z.infer<typeof loginSchema>
 export type RegisterForm = z.infer<typeof registerSchema>
+export type AdminLoginForm = z.infer<typeof adminLoginSchema>

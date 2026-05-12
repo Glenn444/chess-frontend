@@ -1,22 +1,45 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useAdminStore } from '../lib/adminStore'
 import { useEventStore } from '../lib/eventStore'
 import { useIsMobile } from '../lib/useIsMobile'
+import { adminLoginSchema, type AdminLoginForm } from '../lib/schemas'
 import Icon from '../components/icons/Icon'
 import logoPng from '../assets/chesske-logo.png'
 
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '12px 14px',
+  background: 'var(--color-bg-base)', border: '1px solid var(--color-border-strong)',
+  borderRadius: 12, color: 'var(--color-text-primary)', fontSize: 14, outline: 'none',
+}
+
+const errorStyle: React.CSSProperties = {
+  fontSize: 12, color: 'var(--color-red)', marginTop: 4,
+}
+
 /* ─── Admin Login ─── */
 function AdminLogin() {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [showPw, setShowPw] = useState(false)
+  const [serverError, setServerError] = useState('')
   const adminLogin = useAdminStore(s => s.adminLogin)
 
-  const handleLogin = () => {
-    if (!username.trim() || !password.trim()) { setError('Fill in both fields'); return }
-    const ok = adminLogin(username, password)
-    if (!ok) setError('Invalid credentials')
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<AdminLoginForm>({
+    resolver: zodResolver(adminLoginSchema),
+  })
+
+  const onSubmit = (data: AdminLoginForm) => {
+    const ok = adminLogin(data.username, data.password)
+    if (!ok) {
+      setServerError('Invalid credentials')
+      return
+    }
+    setServerError('')
   }
 
   return (
@@ -24,7 +47,7 @@ function AdminLogin() {
       minHeight: '100vh', display: 'grid', placeItems: 'center',
       background: 'var(--color-bg-base)',
     }}>
-      <div style={{
+      <form onSubmit={handleSubmit(onSubmit)} style={{
         background: 'var(--color-bg-raised)', border: '1px solid var(--color-border)',
         borderRadius: 20, padding: 32, maxWidth: 380, width: '100%',
       }}>
@@ -35,30 +58,53 @@ function AdminLogin() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <input
-            value={username} onChange={e => setUsername(e.target.value)}
-            placeholder="Username"
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            style={{ width: '100%', padding: '12px 14px', background: 'var(--color-bg-base)', border: '1px solid var(--color-border-strong)', borderRadius: 12, color: 'var(--color-text-primary)', fontSize: 14, outline: 'none' }}
-          />
-          <input
-            type="password" value={password} onChange={e => setPassword(e.target.value)}
-            placeholder="Password"
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            style={{ width: '100%', padding: '12px 14px', background: 'var(--color-bg-base)', border: '1px solid var(--color-border-strong)', borderRadius: 12, color: 'var(--color-text-primary)', fontSize: 14, outline: 'none' }}
-          />
-          {error && (
-            <div style={{ fontSize: 13, color: 'var(--color-red)', padding: '8px 12px', background: 'rgba(210,106,106,0.1)', borderRadius: 10, border: '1px solid rgba(210,106,106,0.25)' }}>{error}</div>
+          <label style={{ display: 'block' }}>
+            <input {...register('username')} placeholder="Username" style={inputStyle} />
+            {errors.username && <div style={errorStyle}>{errors.username.message}</div>}
+          </label>
+
+          <label style={{ display: 'block', position: 'relative' }}>
+            <input {...register('password')} type={showPw ? 'text' : 'password'} placeholder="Password" style={inputStyle} />
+            <button
+              type="button"
+              onClick={() => setShowPw(p => !p)}
+              tabIndex={-1}
+              style={{
+                position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--color-text-muted)', padding: 4, display: 'flex',
+              }}
+              aria-label={showPw ? 'Hide password' : 'Show password'}
+            >
+              {showPw ? (
+                <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              )}
+            </button>
+            {errors.password && <div style={errorStyle}>{errors.password.message}</div>}
+          </label>
+
+          {serverError && (
+            <div style={{ fontSize: 13, color: 'var(--color-red)', padding: '8px 12px', background: 'rgba(210,106,106,0.1)', borderRadius: 10, border: '1px solid rgba(210,106,106,0.25)' }}>{serverError}</div>
           )}
-          <button onClick={handleLogin} style={{
-            padding: 14, border: 'none', borderRadius: 14, cursor: 'pointer',
-            background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)',
-            color: '#1A1408', fontWeight: 600, fontSize: 15,
+
+          <button type="submit" disabled={isSubmitting} style={{
+            padding: 14, border: 'none', borderRadius: 14, cursor: isSubmitting ? 'not-allowed' : 'pointer',
+            background: isSubmitting ? 'var(--color-border-strong)' : 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)',
+            color: isSubmitting ? 'var(--color-text-muted)' : '#1A1408', fontWeight: 600, fontSize: 15,
+            opacity: isSubmitting ? 0.6 : 1,
           }}>
-            Sign in
+            {isSubmitting ? 'Signing in…' : 'Sign in'}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   )
 }
