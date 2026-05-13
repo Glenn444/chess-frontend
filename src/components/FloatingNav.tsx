@@ -31,20 +31,19 @@ export default function FloatingNav() {
   return (
     <div style={{
       position: 'fixed',
-      bottom: 16,
+      bottom: '1.5rem',
       left: '50%',
       transform: 'translateX(-50%)',
-      zIndex: 9999,
-      display: 'flex',
-      gap: 8,
-      padding: '8px 10px',
-      background: 'rgba(22, 24, 31, 0.7)',
-      backdropFilter: 'blur(30px) saturate(220%)',
-      WebkitBackdropFilter: 'blur(30px) saturate(220%)',
-      border: '1px solid rgba(255, 255, 255, 0.12)',
+      zIndex: 100,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 4,
+      padding: '6px 8px',
+      background: 'rgba(255, 255, 255, 0.12)',
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+      border: '1px solid rgba(255, 255, 255, 0.18)',
       borderRadius: 999,
-      boxShadow: '0 12px 44px -12px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.08)',
-      maxWidth: 'calc(100vw - 20px)',
     }}>
       {LINKS.map(item => {
         const active = location.pathname === item.to
@@ -57,36 +56,29 @@ export default function FloatingNav() {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 4,
-              padding: '10px 16px',
+              gap: 2,
+              padding: '8px 14px',
               borderRadius: 999,
               border: 'none',
               cursor: 'pointer',
-              background: active ? 'var(--color-amber)' : 'transparent',
-              color: active ? '#ffffff' : 'var(--color-text-secondary)',
-              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-              minWidth: 64,
-              position: 'relative',
+              background: active ? '#d4a017' : 'transparent',
+              color: active ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
+              transition: 'all 0.2s ease',
+              minWidth: 56,
             }}
             onMouseEnter={e => {
-              if (!active) {
-                e.currentTarget.style.color = 'var(--color-text-primary)'
-                e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
-              }
+              if (!active) e.currentTarget.style.color = '#ffffff'
             }}
             onMouseLeave={e => {
-              if (!active) {
-                e.currentTarget.style.color = 'var(--color-text-secondary)'
-                e.currentTarget.style.background = 'transparent'
-              }
+              if (!active) e.currentTarget.style.color = 'rgba(255, 255, 255, 0.5)'
             }}
           >
             {item.icon === 'lock' ? (
-              <PadlockIcon size={22} active={active} />
+              <PadlockIcon size={20} active={active} />
             ) : (
-              <Icon name={item.icon} size={22} color={active ? '#ffffff' : 'currentColor'} />
+              <Icon name={item.icon} size={20} color={active ? '#ffffff' : 'currentColor'} />
             )}
-            <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', letterSpacing: 0.2 }}>{item.label}</span>
+            <span style={{ fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}>{item.label}</span>
           </button>
         )
       })}

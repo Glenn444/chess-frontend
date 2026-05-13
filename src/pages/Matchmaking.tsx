@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import Icon from '../components/icons/Icon'
 import { useIsMobile } from '../lib/useIsMobile'
+import { useCreateGame } from '../lib/queries'
 
 function ShareLink({ time, increment, color, onBack }: {
   time: string; increment: string; color: string; onBack: () => void
@@ -94,6 +95,8 @@ export default function Matchmaking() {
   const [elapsed, setElapsed] = useState(0)
   const isMobile = useIsMobile()
   const navigate = useNavigate()
+  const createGame = useCreateGame()
+  const playerRating = 1200
 
   useEffect(() => {
     if (phase !== 'searching') return
@@ -202,15 +205,21 @@ export default function Matchmaking() {
         <div style={{ background: 'var(--color-bg-raised)', border: '1px solid var(--color-border)', borderRadius: 20, padding: isMobile ? 16 : 20, marginBottom: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 4 }}>
             <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>Opponent rating range</div>
-            <div className="font-mono" style={{ fontSize: 12, color: 'var(--color-amber)' }}>±{range} ({1547 - range}–{1547 + range})</div>
+            <div className="font-mono" style={{ fontSize: 12, color: 'var(--color-amber)' }}>±{range} ({playerRating - range}–{playerRating + range})</div>
           </div>
           <input type="range" min="50" max="500" step="50" value={range} onChange={e => setRange(+e.target.value)} style={{ width: '100%', accentColor: 'var(--color-amber)' }} />
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <button onClick={() => navigate('/dashboard')} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '12px 20px', fontWeight: 500, cursor: 'pointer', flex: isMobile ? '1 1 100%' : 'none' }}>Cancel</button>
-          <button onClick={() => setPhase('share')} style={{ minWidth: 200, background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '14px 24px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 18px -6px rgba(229,169,59,0.55)', fontSize: 15, flex: isMobile ? '1 1 100%' : 'none' }}>
-            Find opponent →
+          <button onClick={() => navigate('/games')} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '12px 20px', fontWeight: 500, cursor: 'pointer', flex: isMobile ? '1 1 100%' : 'none' }}>Cancel</button>
+          <button onClick={async () => {
+            try {
+              const playerColor = color === 'white' ? 'w' as const : color === 'black' ? 'b' as const : 'w' as const
+              await createGame.mutateAsync({ opponent: 'person', player_color: playerColor })
+              setPhase('share')
+            } catch { /* error shown via mutation */ }
+          }} disabled={createGame.isPending} style={{ minWidth: 200, background: createGame.isPending ? 'var(--color-border-strong)' : 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: createGame.isPending ? 'var(--color-text-muted)' : '#1A1408', fontWeight: 600, borderRadius: 14, padding: '14px 24px', border: '1px solid rgba(0,0,0,0.15)', cursor: createGame.isPending ? 'not-allowed' : 'pointer', boxShadow: createGame.isPending ? 'none' : '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 18px -6px rgba(229,169,59,0.55)', fontSize: 15, flex: isMobile ? '1 1 100%' : 'none', opacity: createGame.isPending ? 0.6 : 1 }}>
+            {createGame.isPending ? 'Creating…' : 'Find opponent →'}
           </button>
         </div>
       </div>
@@ -270,7 +279,7 @@ export default function Matchmaking() {
 
           <h1 className="font-display" style={{ fontSize: isMobile ? 26 : 36, margin: 0, fontWeight: 500, letterSpacing: -0.5 }}>Finding opponent…</h1>
           <p style={{ color: 'var(--color-text-secondary)', margin: '10px 0 28px', fontSize: isMobile ? 13 : 15 }}>
-            Looking for someone rated <span style={{ color: 'var(--color-amber)' }}>{1547 - range}–{1547 + range}</span> to play <span className="font-mono" style={{ color: 'var(--color-amber)' }}>{time}+{increment}</span>.
+            Looking for someone rated <span style={{ color: 'var(--color-amber)' }}>{playerRating - range}–{playerRating + range}</span> to play <span className="font-mono" style={{ color: 'var(--color-amber)' }}>{time}+{increment}</span>.
           </p>
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginBottom: 32, flexWrap: 'wrap' }}>
@@ -304,8 +313,8 @@ export default function Matchmaking() {
 
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button onClick={() => setPhase('config')} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '12px 20px', fontWeight: 500, cursor: 'pointer', fontSize: isMobile ? 13 : 14 }}>← Change settings</button>
-            <button onClick={() => navigate('/game')} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '12px 20px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 18px -6px rgba(229,169,59,0.55)', fontSize: isMobile ? 13 : 14 }}>
-              Skip to game (demo) →
+            <button onClick={() => navigate('/games')} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '12px 20px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 18px -6px rgba(229,169,59,0.55)', fontSize: isMobile ? 13 : 14 }}>
+            <Icon name="arrow-right" size={14} /> Go to games
             </button>
           </div>
 

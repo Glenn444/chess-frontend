@@ -10,9 +10,11 @@ import { Login, Register } from './pages/Auth'
 import Dashboard from './pages/Dashboard'
 import Matchmaking from './pages/Matchmaking'
 import GameScreen from './pages/GameScreen'
+import Games from './pages/Games'
 import Events from './pages/Events'
 import EventDetail from './pages/EventDetail'
 import Admin from './pages/Admin'
+import VerifyEmail from './pages/VerifyEmail'
 
 function SplashScreen() {
   return (
@@ -34,21 +36,23 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 function GuestRoute({ children }: { children: ReactNode }) {
   const user = useAuth(s => s.user)
-  if (user) return <Navigate to="/dashboard" replace />
+  if (user) return <Navigate to="/games" replace />
   return <>{children}</>
 }
 
 export default function App() {
-  const { data, isLoading } = useMe()
+  const token = useAuth(s => s.token)
+  const { data: me, isLoading } = useMe()
   const setUser = useAuth(s => s.setUser)
   const user = useAuth(s => s.user)
 
-  // Sync React Query cache → Zustand client state
+  // Sync API response → Zustand client state
   useEffect(() => {
-    if (data?.user) setUser(data.user)
-  }, [data, setUser])
+    if (me) setUser(me)
+  }, [me, setUser])
 
-  if (isLoading) return <SplashScreen />
+  // Only show splash while we have a stored token and are verifying it
+  if (token && isLoading) return <SplashScreen />
 
   return (
     <PieceThemeProvider>
@@ -60,8 +64,11 @@ export default function App() {
         <Route path="/admin" element={<Admin />} />
         <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
         <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
         <Route path="/matchmaking" element={<ProtectedRoute><Matchmaking /></ProtectedRoute>} />
+        <Route path="/game/:id" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
         <Route path="/game" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
       </Routes>
       {!user && <FloatingNav />}

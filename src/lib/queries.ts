@@ -1,83 +1,163 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { api } from './api'
+import { useAuth } from './authStore'
 import type { LoginForm, RegisterForm } from './schemas'
-import type { AuthUser } from './authStore'
 
-// ─── /me hydration ───
+// ─── /me — rehydrate user profile using stored JWT ───
 export function useMe() {
+  const token = useAuth(s => s.token)
+
   return useQuery({
     queryKey: ['me'],
-    queryFn: () =>
-      fetch('/api/auth/me', { credentials: 'include' })
-        .then(r => (r.ok ? r.json() as Promise<{ user: AuthUser }> : null)),
+    queryFn: () => api.me(),
+    enabled: !!token,
     retry: false,
-    staleTime: Infinity,
+    staleTime: 5 * 60 * 1000,
   })
 }
 
-// ─── Login mutation ───
+// ─── Signin (login) mutation ───
 export function useLogin() {
   const queryClient = useQueryClient()
+  const setAuth = useAuth(s => s.setAuth)
+  const setUser = useAuth(s => s.setUser)
+
   return useMutation({
-    mutationFn: (data: LoginForm) =>
-      fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data),
-      }).then(async r => {
-        if (!r.ok) {
-          const err = await r.json().catch(() => ({ message: 'Login failed' }))
-          throw new Error(err.message || 'Login failed')
-        }
-        return r.json() as Promise<{ user: AuthUser }>
-      }),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['me'], data)
+    mutationFn: (data: LoginForm) => api.signin(data),
+    onSuccess: async (signinData) => {
+      // Store tokens
+      setAuth(signinData.access_token, signinData.refresh_token)
+
+      // Fetch user profile with the new token
+      try {
+        const me = await api.me()
+        setUser(me)
+        queryClient.setQueryData(['me'], me)
+      } catch {
+        // /me call failed but signin succeeded — user can still use the app
+      }
     },
   })
 }
 
-// ─── Register mutation ───
+// ─── Signup (register) mutation — signup only, user must verify email before login ──
 export function useRegister() {
-  const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: RegisterForm) =>
-      fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data),
-      }).then(async r => {
-        if (!r.ok) {
-          const err = await r.json().catch(() => ({ message: 'Registration failed' }))
-          throw new Error(err.message || 'Registration failed')
-        }
-        return r.json() as Promise<{ user: AuthUser }>
-      }),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['me'], data)
-    },
+    mutationFn: (data: RegisterForm) => api.signup(data),
   })
 }
 
-// ─── Logout mutation ───
+// ─── Email verification ──
+export function useVerifyEmail() {
+  return useMutation({
+    mutationFn: (data: { email: string; email_otp: string }) => api.confirmEmail(data),
+  })
+}
+
+// ─── Resend OTP ──
+export function useResendOTP() {
+  return useMutation({
+    mutationFn: (email: string) => api.resendOTP(email),
+  })
+}
+
+// ─── Logout ───
 export function useLogout() {
   const queryClient = useQueryClient()
+  const logout = useAuth(s => s.logout)
+
   return useMutation({
-    mutationFn: () =>
-      fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }),
-    onSuccess: () => {
+    mutationFn: () => {
+      logout()
       queryClient.clear()
+      return Promise.resolve()
     },
   })
 }
 
-// ─── Active games (polled) ───
-export function useActiveGames() {
+// ─── Active / waiting games ───
+export function useWaitingGames() {
   return useQuery({
-    queryKey: ['games', 'active'],
-    queryFn: () =>
-      fetch('/api/games/active', { credentials: 'include' }).then(r => r.json()),
+    queryKey: ['games', 'waiting'],
+    queryFn: () => api.listGames(),
     refetchInterval: 10_000,
+  })
+}
+
+// ─── My games ───
+export function useMyGames() {
+  return useQuery({
+    queryKey: ['games', 'mine'],
+    queryFn: () => api.myGames(),
+    refetchInterval: 10_000,
+  })
+}
+
+// ─── Create game ───
+export function useCreateGame() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (data: { opponent: 'person' | 'stockfish'; player_color: 'w' | 'b' }) =>
+      api.createGame(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] })
+    },
+  })
+}
+
+// ─── Join game ───
+export function useJoinGame() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (gameId: string) => api.joinGame(gameId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] })
+    },
+  })
+}
+
+// ─── Game moves ───
+export function useGameMoves(gameId: string | null) {
+  return useQuery({
+    queryKey: ['games', gameId, 'moves'],
+    queryFn: () => api.getMoves(gameId!),
+    enabled: !!gameId,
+    refetchInterval: 3_000,
+  })
+}
+
+// ─── Chat messages ───
+export function useGameChat(gameId: string | null) {
+  return useQuery({
+    queryKey: ['games', gameId, 'chat'],
+    queryFn: () => api.getChat(gameId!),
+    enabled: !!gameId,
+    refetchInterval: 3_000,
+  })
+}
+
+// ─── Send chat ───
+export function useSendChat(gameId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (content: string) => api.sendChat(gameId, content),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games', gameId, 'chat'] })
+    },
+  })
+}
+
+// ─── Resign ───
+export function useResignGame() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (gameId: string) => api.resignGame(gameId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] })
+    },
   })
 }

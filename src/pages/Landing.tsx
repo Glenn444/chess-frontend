@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../components/icons/Icon'
 import Avatar from '../components/Avatar'
@@ -66,18 +65,14 @@ function LiveGameTile({ white, black, moves, viewers, time, opening, onClick }: 
 }
 
 export default function Landing() {
-  const [navOpen, setNavOpen] = useState(false)
   const navigate = useNavigate()
   const user = useAuth(s => s.user)
   const isMobile = useIsMobile()
 
   const liveGames = [
-    { white: { name: 'Magnus_J', rating: 2840, c: 'amber' }, black: { name: 'fabi_c', rating: 2792, c: 'blue' }, moves: 24, viewers: '1.2k', time: '5+3', opening: 'Sicilian Najdorf' },
-    { white: { name: 'knight_rider', rating: 1547, c: 'amber' }, black: { name: 'Maya_R', rating: 1612, c: 'rose' }, moves: 14, viewers: '8', time: '10+0', opening: 'Italian Game' },
-    { white: { name: 'polgar_fan', rating: 2104, c: 'violet' }, black: { name: 'endgame_eli', rating: 2087, c: 'green' }, moves: 41, viewers: '67', time: '15+10', opening: "Queen's Gambit" },
-    { white: { name: 'rookie_27', rating: 980, c: 'teal' }, black: { name: 'pawnstorm', rating: 1024, c: 'amber' }, moves: 9, viewers: '3', time: '3+2', opening: 'London System' },
-    { white: { name: 'Tomás_S', rating: 1498, c: 'blue' }, black: { name: 'Hina_K', rating: 1580, c: 'violet' }, moves: 32, viewers: '12', time: '10+5', opening: 'Caro-Kann' },
-    { white: { name: 'openings_db', rating: 1820, c: 'green' }, black: { name: 'tactic_x', rating: 1845, c: 'rose' }, moves: 18, viewers: '24', time: '5+0', opening: "King's Indian" },
+    { white: { name: 'knight_rider', rating: 1547, c: 'amber' }, black: { name: 'Maya_R', rating: 1612, c: 'rose' }, moves: 14, viewers: '3', time: '10+0', opening: 'Italian Game' },
+    { white: { name: 'rookie_27', rating: 980, c: 'teal' }, black: { name: 'pawnstorm', rating: 1024, c: 'amber' }, moves: 9, viewers: '2', time: '3+2', opening: 'London System' },
+    { white: { name: 'Tomás_S', rating: 1498, c: 'blue' }, black: { name: 'Hina_K', rating: 1580, c: 'violet' }, moves: 32, viewers: '5', time: '10+5', opening: 'Caro-Kann' },
   ]
 
   return (
@@ -99,30 +94,14 @@ export default function Landing() {
             </>
           )}
         </div>
-        <button onClick={() => setNavOpen(o => !o)} style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border-strong)', borderRadius: 10, width: 40, height: 40, color: 'var(--color-text-primary)', cursor: 'pointer', display: 'none' }} className="nav-burger" aria-label="Menu">
-          <Icon name={navOpen ? 'x' : 'zap'} size={20} />
-        </button>
       </nav>
-      {navOpen && (
-        <div className="nav-mobile-menu" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 24px 24px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-raised)' }}>
-          <a style={{ color: 'var(--color-text-secondary)', fontSize: 15, cursor: 'pointer' }} onClick={() => { setNavOpen(false); navigate('/events') }}>Events</a>
-          {user ? (
-            <button onClick={() => { setNavOpen(false); navigate('/dashboard') }} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '10px 18px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer' }}>Dashboard</button>
-          ) : (
-            <>
-              <button onClick={() => { setNavOpen(false); navigate('/login') }} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '10px 16px', fontWeight: 500, cursor: 'pointer' }}>Log in</button>
-              <button onClick={() => { setNavOpen(false); navigate('/register') }} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '10px 18px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer' }}>Sign up</button>
-            </>
-          )}
-        </div>
-      )}
 
       {/* Hero */}
       <section style={{ display: 'grid', gridTemplateColumns: '1.05fr 1fr', gap: 60, padding: '80px 40px 30px', alignItems: 'center', maxWidth: 1320, margin: '0 auto', width: '100%' }} className="landing-hero">
         <div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999, background: 'rgba(229,169,59,0.1)', border: '1px solid rgba(229,169,59,0.32)', color: 'var(--color-amber-light)', fontSize: 12, marginBottom: 24 }}>
             <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--color-amber)' }} />
-            Live · 14,238 players online
+            Live · 127 players online
           </div>
           <h1 className="font-display landing-h1" style={{ lineHeight: 1.02, margin: 0, letterSpacing: -2, fontWeight: 500, fontSize: 76 }}>
             Chess that<br/>
@@ -141,11 +120,11 @@ export default function Landing() {
             </button>
           </div>
 
-          <div className="trust-strip" style={{ display: 'flex', gap: 32, marginTop: 56, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="trust-strip" style={{ display: 'flex', gap: 32, marginTop: 56, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
             {[
-              { v: '1.4M', l: 'games played' },
-              { v: '180+', l: 'countries' },
-              { v: '4.9★', l: 'App Store' },
+              { v: '1,200+', l: 'games played' },
+              { v: '5', l: 'countries' },
+              { v: '24/7', l: 'voice chat' },
             ].map(s => (
               <div key={s.l}>
                 <div className="font-display" style={{ fontSize: 24, fontWeight: 600 }}>{s.v}</div>
@@ -192,7 +171,7 @@ export default function Landing() {
           <div>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999, background: 'rgba(229,169,59,0.1)', border: '1px solid rgba(229,169,59,0.32)', color: 'var(--color-amber-light)', fontSize: 12, marginBottom: 12 }}>
               <span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--color-red)', animation: 'speaking 1.4s ease-in-out infinite' }} />
-              4,612 games in progress
+              12 games in progress
             </div>
             <h2 className="font-display" style={{ margin: 0, fontWeight: 500, letterSpacing: -0.8, fontSize: 42 }}>
               Watch <span style={{ color: 'var(--color-amber)', fontStyle: 'italic' }}>live</span> games right now.

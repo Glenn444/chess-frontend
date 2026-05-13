@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, memo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import Board from '../components/Board'
 import Piece from '../components/Piece'
@@ -7,6 +7,9 @@ import Icon from '../components/icons/Icon'
 import Avatar from '../components/Avatar'
 import PieceThemeSelector from '../components/PieceThemeSelector'
 import { useIsMobile } from '../lib/useIsMobile'
+import { useLiveGame } from '../lib/gameStore'
+import { useAuth } from '../lib/authStore'
+import { useVoiceCall } from '../lib/useVoiceCall'
 
 const SAMPLE_MOVES = [
   { n: 1, w: 'e4',  b: 'e5'  },
@@ -219,16 +222,14 @@ const Waveform = memo(function Waveform({ active }: { active: boolean }) {
   )
 })
 
-/* ───── Voice bar (owns its own speaking state) ───── */
-function VoiceBar({ muted, onToggleMute }: {
+/* ───── Voice bar (uses real WebRTC voice state) ───── */
+function VoiceBar({ muted, onToggleMute, voiceStatus, onStartCall, onEndCall }: {
   muted: boolean; onToggleMute: () => void
+  voiceStatus: string
+  onStartCall: () => void
+  onEndCall: () => void
 }) {
-  const [opponentSpeaking, setOpponentSpeaking] = useState(true)
-
-  useEffect(() => {
-    const id = setInterval(() => setOpponentSpeaking(s => !s), 2400)
-    return () => clearInterval(id)
-  }, [])
+  const active = voiceStatus === 'connected'
 
   return (
     <div style={{
@@ -237,40 +238,49 @@ function VoiceBar({ muted, onToggleMute }: {
       borderRadius: 16,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-        <div className={opponentSpeaking ? 'pulse-ring' : ''} style={{
+        <div className={active ? 'pulse-ring' : ''} style={{
           width: 36, height: 36, borderRadius: 12,
-          background: opponentSpeaking ? 'rgba(95,174,126,0.18)' : 'var(--color-bg-base)',
-          border: `1px solid ${opponentSpeaking ? 'var(--color-green)' : 'var(--color-border-strong)'}`,
-          display: 'grid', placeItems: 'center', color: opponentSpeaking ? 'var(--color-green)' : 'var(--color-text-secondary)',
+          background: active ? 'rgba(95,174,126,0.18)' : 'var(--color-bg-base)',
+          border: `1px solid ${active ? 'var(--color-green)' : 'var(--color-border-strong)'}`,
+          display: 'grid', placeItems: 'center', color: active ? 'var(--color-green)' : 'var(--color-text-secondary)',
           flexShrink: 0,
         }}>
           <Icon name="mic" size={16} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-            {opponentSpeaking ? <><span style={{ color: 'var(--color-green)' }}>● Maya is speaking</span></> : <span>Voice connected</span>}
+            {voiceStatus === 'idle' && <span>Voice available</span>}
+            {voiceStatus === 'connected' && <span style={{ color: 'var(--color-green)' }}>● Call active</span>}
+            {voiceStatus === 'ended' && <span>Call ended</span>}
           </div>
-          <Waveform active={opponentSpeaking} />
+          <Waveform active={active} />
         </div>
       </div>
-      <button onClick={onToggleMute} style={{
-        width: 38, height: 38, borderRadius: 10, cursor: 'pointer',
-        background: muted ? 'rgba(210,106,106,0.15)' : 'var(--color-bg-base)',
-        border: `1px solid ${muted ? 'rgba(210,106,106,0.4)' : 'var(--color-border-strong)'}`,
-        color: muted ? 'var(--color-red)' : 'var(--color-text-secondary)',
-        display: 'grid', placeItems: 'center',
-      }}>
-        <Icon name={muted ? 'mic-off' : 'mic'} size={16} />
-      </button>
-      <button style={{
-        width: 38, height: 38, borderRadius: 10, cursor: 'pointer',
-        background: 'rgba(210,106,106,0.15)',
-        border: '1px solid rgba(210,106,106,0.4)',
-        color: 'var(--color-red)',
-        display: 'grid', placeItems: 'center',
-      }}>
-        <Icon name="phone-off" size={16} />
-      </button>
+      {active && (
+        <button onClick={onToggleMute} style={{
+          width: 38, height: 38, borderRadius: 10, cursor: 'pointer',
+          background: muted ? 'rgba(210,106,106,0.15)' : 'var(--color-bg-base)',
+          border: `1px solid ${muted ? 'rgba(210,106,106,0.4)' : 'var(--color-border-strong)'}`,
+          color: muted ? 'var(--color-red)' : 'var(--color-text-secondary)',
+          display: 'grid', placeItems: 'center',
+        }}>
+          <Icon name={muted ? 'mic-off' : 'mic'} size={16} />
+        </button>
+      )}
+      {voiceStatus === 'idle' && (
+        <button onClick={onStartCall} title="Start voice call" style={{
+          width: 38, height: 38, borderRadius: 10, cursor: 'pointer',
+          background: 'rgba(95,174,126,0.15)', border: '1px solid rgba(95,174,126,0.4)',
+          color: 'var(--color-green)', display: 'grid', placeItems: 'center',
+        }}><Icon name="mic" size={16} /></button>
+      )}
+      {active && (
+        <button onClick={onEndCall} title="End call" style={{
+          width: 38, height: 38, borderRadius: 10, cursor: 'pointer',
+          background: 'rgba(210,106,106,0.15)', border: '1px solid rgba(210,106,106,0.4)',
+          color: 'var(--color-red)', display: 'grid', placeItems: 'center',
+        }}><Icon name="phone-off" size={16} /></button>
+      )}
     </div>
   )
 }
@@ -349,8 +359,16 @@ const OPPONENT = { name: 'Maya R', rating: '1,612', title: 'FM', color: 'black',
 const PLAYER = { name: 'Alex Chen', rating: '1,547', color: 'white', online: true, avatarColor: 'amber' }
 
 export default function GameScreen() {
+  const navigate = useNavigate()
+  const { id: gameId } = useParams<{ id?: string }>()
+  const token = useAuth(s => s.token)
+  const currentUser = useAuth(s => s.user)
+
+  // Voice call — real WebRTC
+  const socket = useLiveGame(s => s.socket)
+  const voice = useVoiceCall(socket)
+
   const [chatCollapsed, setChatCollapsed] = useState(false)
-  const [muted, setMuted] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [resignOpen, setResignOpen] = useState(false)
   const [drawOffered, setDrawOffered] = useState(false)
@@ -358,14 +376,20 @@ export default function GameScreen() {
   const isMobile = useIsMobile()
   const [sheet, setSheet] = useState<'voice' | 'chat' | 'moves' | 'actions' | 'theme' | null>(null)
 
-  const [messages, setMessages] = useState([
-    { me: false, text: 'gl, hf!', time: '14:02' },
-    { me: true, text: 'you too — going for the Italian today', time: '14:02' },
-    { me: false, text: 'haha okay, my favorite trap line', time: '14:03' },
-    { me: false, text: 'nice castle 👌', time: '14:08' },
-    { me: true, text: 'thanks! tight game so far', time: '14:09' },
-  ])
-  const navigate = useNavigate()
+  // Live game state from WebSocket
+  const {
+    gameState, moves: liveMoves, chatMessages,
+    connect, disconnect, sendChat: wsSendChat,
+  } = useLiveGame()
+
+  // Connect WebSocket + request mic when game ID is present
+  useEffect(() => {
+    if (gameId && token) {
+      connect(gameId, token)
+      voice.requestMic()
+    }
+    return () => disconnect()
+  }, [gameId, token, connect, disconnect])
 
   // Responsive: detect mobile + compute board size
   useEffect(() => {
@@ -385,19 +409,40 @@ export default function GameScreen() {
     setSelected(prev => prev === sq ? null : sq)
   }, [])
 
-  const handleToggleMute = useCallback(() => setMuted(m => !m), [])
+  // Send chat via WebSocket
   const handleSend = useCallback((text: string) => {
-    setMessages(m => [...m, { me: true, text, time: 'now' }])
-  }, [])
+    if (gameId && gameState) {
+      wsSendChat(text)
+    }
+  }, [gameId, gameState, wsSendChat])
 
   const hints = useMemo(() =>
     selected === 'f3' ? ['d4', 'g5', 'h4', 'e1', 'd2'] : [],
   [selected])
 
+  // Map chat messages to UI format
+  const chatForUI = useMemo(() =>
+    chatMessages.map(m => ({
+      me: m.username === (currentUser?.username || ''),
+      text: m.content,
+      time: new Date(m.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    })),
+  [chatMessages, currentUser])
+
+  // Player info from game state
+  const opponentName = gameState ? (gameState.player_color === 'w' ? gameState.black_player : gameState.white_player) : 'Opponent'
+  const isMyTurn = gameState ? gameState.current_player === gameState.player_color : false
+
   /* ──── Mobile layout ──── */
   if (isMobile) {
     return (
       <div className="fade-in" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-base)' }}>
+        <audio ref={voice.remoteAudioRef} autoPlay />
+        {voice.micDenied && (
+          <div style={{ margin: '8px 12px 0', padding: '10px 14px', background: 'rgba(210,106,106,0.12)', border: '1px solid rgba(210,106,106,0.3)', borderRadius: 12, fontSize: 13, color: 'var(--color-red)', textAlign: 'center' }}>
+            Microphone access is required to play. Please enable your microphone in browser settings.
+          </div>
+        )}
         {/* Board area — full width */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 8px', gap: 10 }}>
           {/* Opponent compact strip */}
@@ -410,7 +455,7 @@ export default function GameScreen() {
 
           {/* Board */}
           <div style={{ position: 'relative', maxWidth: '100%' }}>
-            <Board size={boardSize} selected={selected} hints={hints} lastMove={['d5', 'e7']} check={null} flipped={false} onSquareClick={handleSquareClick} showCoords={boardSize > 400} />
+            <Board size={boardSize} selected={selected} hints={hints} lastMove={liveMoves.length > 0 ? [liveMoves[liveMoves.length - 1].move.slice(0, 2), liveMoves[liveMoves.length - 1].move.slice(2, 4)] : []} check={gameState?.in_check ? 'in_check' : null} flipped={gameState?.player_color === 'b'} onSquareClick={handleSquareClick} />
 
             {drawOffered && (
               <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,15,19,0.85)', display: 'grid', placeItems: 'center', borderRadius: 18, backdropFilter: 'blur(4px)', zIndex: 10 }}>
@@ -451,7 +496,7 @@ export default function GameScreen() {
 
           {/* Status */}
           <div style={{ width: '100%', maxWidth: 560 }}>
-            <StatusBar turn="you" phase="middlegame" check={false} />
+            <StatusBar turn={isMyTurn ? 'you' : opponentName} phase={gameState?.status || 'playing'} check={gameState?.in_check || gameState?.is_checkmate || false} />
           </div>
         </div>
 
@@ -489,11 +534,11 @@ export default function GameScreen() {
 
         {/* Bottom sheets */}
         <BottomSheet open={sheet === 'voice'} onClose={() => setSheet(null)} title="Voice">
-          <VoiceBar muted={muted} onToggleMute={handleToggleMute} />
+          <VoiceBar muted={voice.muted} onToggleMute={voice.toggleMute} voiceStatus={voice.status} onStartCall={voice.startCall} onEndCall={voice.endCall} />
         </BottomSheet>
 
         <BottomSheet open={sheet === 'chat'} onClose={() => setSheet(null)} title="Chat">
-          <ChatPanel messages={messages} onSend={handleSend} />
+          <ChatPanel messages={chatForUI} onSend={handleSend} />
         </BottomSheet>
 
         <BottomSheet open={sheet === 'moves'} onClose={() => setSheet(null)} title="Move History">
@@ -526,22 +571,23 @@ export default function GameScreen() {
   /* ──── Desktop layout (unchanged 3-column) ──── */
   return (
     <div className="fade-in" style={{ display: 'flex', minHeight: '100vh' }}>
+      <audio ref={voice.remoteAudioRef} autoPlay />
       <Sidebar />
       <main className="game-main" style={{ flex: 1, padding: 24, display: 'grid', gridTemplateColumns: '300px 1fr 320px', gap: 16, minHeight: '100vh' }}>
         {/* LEFT — voice + chat */}
         <div className="game-left" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
-          <VoiceBar muted={muted} onToggleMute={handleToggleMute} />
+          <VoiceBar muted={voice.muted} onToggleMute={voice.toggleMute} voiceStatus={voice.status} onStartCall={voice.startCall} onEndCall={voice.endCall} />
           <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
             <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, display: 'flex', flexDirection: 'column', height: chatCollapsed ? 48 : '100%', overflow: 'hidden', transition: 'height .2s ease' }}>
               <div onClick={() => setChatCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', cursor: 'pointer', borderBottom: chatCollapsed ? 'none' : '1px solid var(--color-border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Icon name="chat" size={16} color="var(--color-amber)" />
                   <span style={{ fontSize: 13, fontWeight: 600 }}>Chat</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-bg-elev)', border: '1px solid var(--color-border-strong)', fontSize: 10, color: 'var(--color-text-secondary)' }}>{messages.length}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-bg-elev)', border: '1px solid var(--color-border-strong)', fontSize: 10, color: 'var(--color-text-secondary)' }}>{chatForUI.length}</span>
                 </div>
                 <Icon name={chatCollapsed ? 'arrow-right' : 'x'} size={14} color="var(--color-text-muted)" />
               </div>
-              {!chatCollapsed && <ChatPanel messages={messages} onSend={handleSend} />}
+              {!chatCollapsed && <ChatPanel messages={chatForUI} onSend={handleSend} />}
             </div>
           </div>
         </div>
@@ -552,7 +598,7 @@ export default function GameScreen() {
             <PlayerCard player={OPPONENT} isTurn={false} time="6:42" lowTime={false} />
           </div>
           <div className="game-board-wrap" style={{ position: 'relative', maxWidth: '100%' }}>
-            <Board size={boardSize} selected={selected} hints={hints} lastMove={['d5', 'e7']} check={null} flipped={false} onSquareClick={handleSquareClick} />
+            <Board size={boardSize} selected={selected} hints={hints} lastMove={liveMoves.length > 0 ? [liveMoves[liveMoves.length - 1].move.slice(0, 2), liveMoves[liveMoves.length - 1].move.slice(2, 4)] : []} check={gameState?.in_check ? 'in_check' : null} flipped={gameState?.player_color === 'b'} onSquareClick={handleSquareClick} />
             {drawOffered && (
               <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,15,19,0.85)', display: 'grid', placeItems: 'center', borderRadius: 18, backdropFilter: 'blur(4px)', zIndex: 10 }}>
                 <div style={{ background: 'var(--color-bg-raised)', border: '1px solid var(--color-border)', borderRadius: 20, padding: 24, textAlign: 'center', maxWidth: 320 }}>
@@ -584,7 +630,7 @@ export default function GameScreen() {
             <PlayerCard player={PLAYER} isTurn={true} time="7:08" lowTime={false} />
           </div>
           <div className="game-status-wrap" style={{ width: '100%', maxWidth: 620 }}>
-            <StatusBar turn="you" phase="middlegame" check={false} />
+            <StatusBar turn={isMyTurn ? 'you' : opponentName} phase={gameState?.status || 'playing'} check={gameState?.in_check || gameState?.is_checkmate || false} />
           </div>
         </div>
 

@@ -49,7 +49,7 @@ export default function EventDetail() {
 
   const handleAddComment = () => {
     if (!commentText.trim() || !user) return
-    addComment(event.id, user.id, user.username, commentText.trim())
+    addComment(event.id, user.username, user.username, commentText.trim())
     setCommentText('')
   }
 

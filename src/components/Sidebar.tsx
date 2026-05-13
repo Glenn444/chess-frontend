@@ -6,7 +6,7 @@ import logoPng from '../assets/chesske-logo.png'
 
 const items = [
   { k: '/dashboard', l: 'Home', i: 'user' as const },
-  { k: '/matchmaking', l: 'Play', i: 'zap' as const },
+  { k: '/games', l: 'Play', i: 'zap' as const },
   { k: '/dashboard', l: 'Puzzles', i: 'puzzle' as const },
   { k: '/dashboard', l: 'Games', i: 'clock' as const },
   { k: '/dashboard', l: 'Leaderboard', i: 'trophy' as const },
@@ -19,8 +19,8 @@ export default function Sidebar() {
   const active = location.pathname
 
   const activeItem = items.find(it => active === it.k || active.startsWith(it.k + '/'))
-  const displayName = user?.username || 'Alex Chen'
-  const displayRating = user?.rating ?? 1547
+  const displayName = user?.username || 'Player'
+  const displayRating = 1200
 
   return (
     <aside className="sidebar" style={{

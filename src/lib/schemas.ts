@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 export const loginSchema = z.object({
   email: z.string().email('Invalid email'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
 })
 
 export const registerSchema = z.object({
@@ -12,10 +12,9 @@ export const registerSchema = z.object({
     .regex(/^[a-zA-Z0-9_]+$/, 'Only letters, numbers, and underscores'),
   email: z.string().email('Invalid email'),
   password: z.string()
-    .min(8, 'At least 8 characters')
+    .min(6, 'At least 6 characters')
     .regex(/[A-Z]/, 'At least one uppercase letter')
     .regex(/[0-9]/, 'At least one number'),
-  rating: z.string(),
 })
 
 export const adminLoginSchema = z.object({

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -6,6 +6,7 @@ import Icon from '../components/icons/Icon'
 import AnimatedBoard from '../components/AnimatedBoard'
 import { loginSchema, registerSchema, type LoginForm, type RegisterForm } from '../lib/schemas'
 import { useLogin, useRegister } from '../lib/queries'
+import { api } from '../lib/api'
 import { useIsMobile } from '../lib/useIsMobile'
 import logoPng from '../assets/chesske-logo.png'
 
@@ -88,15 +89,18 @@ export function Login() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
   })
 
+  const email = watch('email')
+
   const onSubmit = async (data: LoginForm) => {
     try {
       await loginMutation.mutateAsync(data)
-      navigate('/dashboard')
+      navigate('/games')
     } catch {
       // server error shown via loginMutation.error below
     }
@@ -148,11 +152,22 @@ export function Login() {
               {errors.password && <div style={errorStyle}>{errors.password.message}</div>}
             </label>
 
-            {loginMutation.error && (
-              <div style={{ fontSize: 13, color: 'var(--color-red)', padding: '8px 12px', background: 'rgba(210,106,106,0.1)', borderRadius: 10, border: '1px solid rgba(210,106,106,0.25)' }}>
-                {loginMutation.error instanceof Error ? loginMutation.error.message : 'Login failed'}
-              </div>
-            )}
+            {loginMutation.error && (() => {
+              const errMsg = loginMutation.error instanceof Error ? loginMutation.error.message : 'Login failed'
+              const isUnverified = errMsg.toLowerCase().includes('verify') || errMsg.toLowerCase().includes('confirm') || errMsg.toLowerCase().includes('not verified') || errMsg.toLowerCase().includes('not confirmed')
+              return (
+                <div style={{ fontSize: 13, color: 'var(--color-red)', padding: '10px 14px', background: 'rgba(210,106,106,0.1)', borderRadius: 10, border: '1px solid rgba(210,106,106,0.25)' }}>
+                  {errMsg}
+                  {isUnverified && (
+                    <div style={{ marginTop: 8 }}>
+                      <a onClick={() => navigate(`/verify-email?email=${encodeURIComponent(email)}`)} style={{ color: 'var(--color-amber)', cursor: 'pointer', fontWeight: 500 }}>
+                        Verify your email →
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
 
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4 }}>
               <input type="checkbox" defaultChecked style={{ accentColor: 'var(--color-amber)' }} />
@@ -193,8 +208,8 @@ export function Login() {
 
 /* ───── Register ───── */
 export function Register() {
-  const [step, setStep] = useState(1)
   const [showPw, setShowPw] = useState(false)
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle')
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const registerMutation = useRegister()
@@ -205,26 +220,37 @@ export function Register() {
     formState: { errors, isSubmitting },
   } = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { rating: '1200' },
   })
 
-  const selectedRating = watch('rating')
+  const username = watch('username')
+
+  // Debounced username availability check
+  useEffect(() => {
+    if (!username || username.length < 3) {
+      setUsernameStatus('idle')
+      return
+    }
+    setUsernameStatus('checking')
+    const timer = setTimeout(async () => {
+      try {
+        await api.checkUsername(username)
+        // API returns empty object or success = available; error 409 = taken
+        setUsernameStatus('available')
+      } catch {
+        setUsernameStatus('taken')
+      }
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [username])
 
   const onSubmit = async (data: RegisterForm) => {
     try {
       await registerMutation.mutateAsync(data)
-      navigate('/dashboard')
+      navigate(`/verify-email?email=${encodeURIComponent(data.email)}`)
     } catch {
       // server error shown via registerMutation.error
     }
   }
-
-  const ratingOptions = [
-    { l: 'Beginner', r: '800–1200', k: '800' },
-    { l: 'Casual', r: '1200–1600', k: '1200' },
-    { l: 'Club', r: '1600–2000', k: '1600' },
-    { l: 'Strong', r: '2000+', k: '2000' },
-  ]
 
   return (
     <>
@@ -240,96 +266,69 @@ export function Register() {
           )}
           <div style={{ marginBottom: 28 }}>
             <h1 className="font-display" style={{ fontSize: isMobile ? 28 : 36, margin: 0, letterSpacing: -0.5, fontWeight: 500 }}>Create your account</h1>
-            <p style={{ color: 'var(--color-text-secondary)', margin: '6px 0 0' }}>Step {step} of 2 — {step === 1 ? 'the basics' : 'set your rating'}.</p>
+            <p style={{ color: 'var(--color-text-secondary)', margin: '6px 0 0' }}>Sign up in under 30 seconds.</p>
           </div>
 
-          <div style={{ display: 'flex', gap: 6, marginBottom: 24 }}>
-            <div style={{ height: 4, borderRadius: 2, flex: 1, background: 'var(--color-amber)' }} />
-            <div style={{ height: 4, borderRadius: 2, flex: 1, background: step === 2 ? 'var(--color-amber)' : 'var(--color-border-strong)' }} />
-          </div>
-
-          {step === 1 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <label style={{ display: 'block' }}>
-                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6, fontWeight: 500 }}>Username</div>
-                <input {...register('username')} placeholder="pick a unique handle" style={inputStyle} />
-                {errors.username && <div style={errorStyle}>{errors.username.message}</div>}
-              </label>
-              <label style={{ display: 'block' }}>
-                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6, fontWeight: 500 }}>Email</div>
-                <input {...register('email')} placeholder="you@example.com" style={inputStyle} />
-                {errors.email && <div style={errorStyle}>{errors.email.message}</div>}
-              </label>
-              <label style={{ display: 'block' }}>
-                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6, fontWeight: 500 }}>Password</div>
-                <div style={{ position: 'relative' }}>
-                  <input {...register('password')} type={showPw ? 'text' : 'password'} style={inputStyle} />
-                  <button type="button" onClick={() => setShowPw(p => !p)} tabIndex={-1} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 4, display: 'flex' }} aria-label={showPw ? 'Hide password' : 'Show password'}>
-                    {showPw ? (
-                      <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
-                      </svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-                      </svg>
-                    )}
-                  </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <label style={{ display: 'block' }}>
+              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6, fontWeight: 500 }}>Username</div>
+              <input {...register('username')} placeholder="pick a unique handle" style={inputStyle} />
+              {errors.username ? (
+                <div style={errorStyle}>{errors.username.message}</div>
+              ) : usernameStatus === 'checking' ? (
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 6 }}>Checking availability…</div>
+              ) : usernameStatus === 'available' ? (
+                <div style={{ fontSize: 12, color: 'var(--color-green)', marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2}><path d="M5 12l5 5 9-11" /></svg>
+                  Username is available
                 </div>
-                {errors.password && <div style={errorStyle}>{errors.password.message}</div>}
-              </label>
-
-              {registerMutation.error && (
-                <div style={{ fontSize: 13, color: 'var(--color-red)', padding: '8px 12px', background: 'rgba(210,106,106,0.1)', borderRadius: 10, border: '1px solid rgba(210,106,106,0.25)' }}>
-                  {registerMutation.error instanceof Error ? registerMutation.error.message : 'Registration failed'}
-                </div>
-              )}
-
-              <button type="button" onClick={() => setStep(2)} style={amberBtnStyle}>
-                Continue →
-              </button>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              {/* Hidden rating field — set via the visual picker */}
-              <input type="hidden" {...register('rating')} />
-
-              <div>
-                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 10, fontWeight: 500 }}>What's your skill level?</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {ratingOptions.map(o => (
-                    <div key={o.l} onClick={() => register('rating').onChange({ target: { value: o.k } })} style={{
-                      padding: 14, borderRadius: 12, cursor: 'pointer',
-                      border: selectedRating === o.k ? '1.5px solid var(--color-amber)' : '1px solid var(--color-border-strong)',
-                      background: selectedRating === o.k ? 'rgba(229,169,59,0.08)' : 'var(--color-bg-elev)',
-                    }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{o.l}</div>
-                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 2 }}>ELO {o.r}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: 'var(--color-text-secondary)' }}>
-                <input type="checkbox" defaultChecked style={{ accentColor: 'var(--color-amber)', marginTop: 3 }} />
-                <span>I agree to the <a style={{ color: 'var(--color-amber)' }}>Terms</a> and <a style={{ color: 'var(--color-amber)' }}>Privacy Policy</a>.</span>
-              </label>
-
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button type="button" onClick={() => setStep(1)} style={{ ...ghostBtnStyle, flex: '0 0 auto' }}>← Back</button>
-                <button type="submit" disabled={isSubmitting} style={{
-                  ...amberBtnStyle,
-                  flex: 1,
-                  opacity: isSubmitting ? 0.6 : 1,
-                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                }}>
-                  {isSubmitting ? 'Creating account…' : 'Create account'}
+              ) : usernameStatus === 'taken' ? (
+                <div style={{ fontSize: 12, color: 'var(--color-red)', marginTop: 6 }}>Username is already taken</div>
+              ) : null}
+            </label>
+            <label style={{ display: 'block' }}>
+              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6, fontWeight: 500 }}>Email</div>
+              <input {...register('email')} placeholder="you@example.com" style={inputStyle} />
+              {errors.email && <div style={errorStyle}>{errors.email.message}</div>}
+            </label>
+            <label style={{ display: 'block' }}>
+              <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 6, fontWeight: 500 }}>Password</div>
+              <div style={{ position: 'relative' }}>
+                <input {...register('password')} type={showPw ? 'text' : 'password'} style={inputStyle} />
+                <button type="button" onClick={() => setShowPw(p => !p)} tabIndex={-1} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', padding: 4, display: 'flex' }} aria-label={showPw ? 'Hide password' : 'Show password'}>
+                  {showPw ? (
+                    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
                 </button>
               </div>
-            </div>
-          )}
+              {errors.password && <div style={errorStyle}>{errors.password.message}</div>}
+            </label>
+
+            {registerMutation.error && (
+              <div style={{ fontSize: 13, color: 'var(--color-red)', padding: '8px 12px', background: 'rgba(210,106,106,0.1)', borderRadius: 10, border: '1px solid rgba(210,106,106,0.25)' }}>
+                {registerMutation.error instanceof Error ? registerMutation.error.message : 'Registration failed'}
+              </div>
+            )}
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+              <input type="checkbox" defaultChecked style={{ accentColor: 'var(--color-amber)', marginTop: 3 }} />
+              <span>I agree to the <a style={{ color: 'var(--color-amber)' }}>Terms</a> and <a style={{ color: 'var(--color-amber)' }}>Privacy Policy</a>.</span>
+            </label>
+
+            <button type="submit" disabled={isSubmitting} style={{
+              ...amberBtnStyle,
+              opacity: isSubmitting ? 0.6 : 1,
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+            }}>
+              {isSubmitting ? 'Creating account…' : 'Create account'}
+            </button>
+          </div>
 
           <p style={{ marginTop: 24, color: 'var(--color-text-secondary)', fontSize: 14, textAlign: 'center' }}>
             Already have one? <a onClick={() => navigate('/login')} style={{ color: 'var(--color-amber)', cursor: 'pointer', fontWeight: 500 }}>Log in</a>

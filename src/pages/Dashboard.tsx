@@ -104,8 +104,8 @@ export default function Dashboard() {
     navigate('/login')
   }, [navigate, logoutMutation])
 
-  const displayName = user?.username || 'Alex'
-  const displayRating = user?.rating || 1547
+  const displayName = user?.username || 'Player'
+  const displayRating = 1200 // default starting rating
 
   const statsCols = isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)'
   const gamesCols = isMobile ? '1fr' : '1fr 1fr 1fr'
@@ -137,7 +137,7 @@ export default function Dashboard() {
                 </button>
               </>
             )}
-            <button onClick={() => navigate('/matchmaking')} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: isMobile ? '10px 16px' : '12px 20px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 18px -6px rgba(229,169,59,0.55)', fontSize: isMobile ? 13 : 14 }}>
+            <button onClick={() => navigate('/games')} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: isMobile ? '10px 16px' : '12px 20px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 18px -6px rgba(229,169,59,0.55)', fontSize: isMobile ? 13 : 14 }}>
               <Icon name="plus" size={16} color="#1A1408" /> New game
             </button>
             <button onClick={handleLogout} style={{ background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)', borderRadius: 14, padding: isMobile ? '8px 14px' : '10px 16px', fontWeight: 500, cursor: 'pointer', fontSize: isMobile ? 12 : 13 }}>
@@ -149,9 +149,9 @@ export default function Dashboard() {
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: statsCols, gap: 14, marginBottom: 28 }}>
           <StatCard label="Rating" value={String(displayRating)} sub="↑ 32 this week" accent="var(--color-amber)" spark="0,18 12,15 24,17 36,11 48,12 60,8 72,9 84,5 96,4" />
-          <StatCard label="Games" value="284" sub="156W · 98L · 30D" />
-          <StatCard label="Win rate" value="55%" sub="last 30 days" accent="var(--color-green)" />
-          <StatCard label="Streak" value="🔥 4" sub="wins in a row" accent="var(--color-amber-light)" />
+          <StatCard label="Games" value="42" sub="24W · 12L · 6D" />
+          <StatCard label="Win rate" value="57%" sub="last 30 days" accent="var(--color-green)" />
+          <StatCard label="Streak" value="🔥 3" sub="wins in a row" accent="var(--color-amber-light)" />
         </div>
 
         {/* Active games */}
@@ -161,9 +161,9 @@ export default function Dashboard() {
             <a style={{ color: 'var(--color-amber)', fontSize: 13, cursor: 'pointer' }}>View all →</a>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: gamesCols, gap: 12 }}>
-            <ActiveGameCard onResume={() => navigate('/game')} game={{ opponent: 'Maya R', color: 'rose', rating: '1,612', move: 14, turn: 'you', time: '3:42 left', preset: 'mid' }} />
-            <ActiveGameCard onResume={() => navigate('/game')} game={{ opponent: 'Tomás S', color: 'blue', rating: '1,498', move: 7, turn: 'them', time: '8:11 left', preset: 'early' }} />
-            <ActiveGameCard onResume={() => navigate('/game')} game={{ opponent: 'Hina K', color: 'violet', rating: '1,580', move: 32, turn: 'you', time: '1:09 left', preset: 'end' }} />
+            <ActiveGameCard onResume={() => navigate('/games')} game={{ opponent: 'Maya R', color: 'rose', rating: '1,612', move: 14, turn: 'you', time: '3:42 left', preset: 'mid' }} />
+            <ActiveGameCard onResume={() => navigate('/games')} game={{ opponent: 'Tomás S', color: 'blue', rating: '1,498', move: 7, turn: 'them', time: '8:11 left', preset: 'early' }} />
+            <ActiveGameCard onResume={() => navigate('/games')} game={{ opponent: 'Hina K', color: 'violet', rating: '1,580', move: 32, turn: 'you', time: '1:09 left', preset: 'end' }} />
           </div>
         </div>
 
