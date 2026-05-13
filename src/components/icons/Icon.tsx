@@ -1,4 +1,4 @@
-type IconName =
+export type IconName =
   | 'logo' | 'mic' | 'mic-off' | 'phone-off' | 'send' | 'chat'
   | 'flag' | 'handshake' | 'clock' | 'trophy' | 'search' | 'plus'
   | 'arrow-right' | 'arrow-left' | 'settings' | 'user' | 'bell'

@@ -28,7 +28,7 @@ export function useVoiceCall(socket: GameSocket | null) {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
 
   const [state, setState] = useState<VoiceState>({
-    status: 'idle', muted: false, micDenied: false, error: null,
+    status: 'idle', muted: true, micDenied: false, error: null,
   })
 
   useEffect(() => {

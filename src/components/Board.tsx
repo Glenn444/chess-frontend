@@ -1,23 +1,12 @@
 import { memo } from 'react'
 import Piece from './Piece'
+import { INITIAL_POSITION } from '../lib/chess'
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 const RANKS = [8, 7, 6, 5, 4, 3, 2, 1]
 
 export interface Position {
   [square: string]: { t: string; c: 'l' | 'd' }
-}
-
-// Italian Game middlegame demo position
-export const DEMO_POSITION: Position = {
-  a8: { t: 'R', c: 'd' }, c8: { t: 'B', c: 'd' }, d8: { t: 'Q', c: 'd' }, e8: { t: 'K', c: 'd' }, h8: { t: 'R', c: 'd' },
-  a7: { t: 'P', c: 'd' }, b7: { t: 'P', c: 'd' }, c7: { t: 'P', c: 'd' }, f7: { t: 'P', c: 'd' }, g7: { t: 'P', c: 'd' }, h7: { t: 'P', c: 'd' },
-  d6: { t: 'P', c: 'd' }, f6: { t: 'N', c: 'd' },
-  e5: { t: 'P', c: 'l' },
-  c4: { t: 'B', c: 'l' }, e4: { t: 'P', c: 'l' },
-  c3: { t: 'N', c: 'l' }, f3: { t: 'N', c: 'l' },
-  a2: { t: 'P', c: 'l' }, b2: { t: 'P', c: 'l' }, d2: { t: 'P', c: 'l' }, f2: { t: 'P', c: 'l' }, g2: { t: 'P', c: 'l' }, h2: { t: 'P', c: 'l' },
-  a1: { t: 'R', c: 'l' }, c1: { t: 'B', c: 'l' }, d1: { t: 'Q', c: 'l' }, e1: { t: 'K', c: 'l' }, h1: { t: 'R', c: 'l' },
 }
 
 interface BoardProps {
@@ -33,7 +22,7 @@ interface BoardProps {
 }
 
 export default memo(function Board({
-  position = DEMO_POSITION,
+  position = INITIAL_POSITION,
   lastMove = ['e2', 'e4'],
   selected = null,
   hints = [],

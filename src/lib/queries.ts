@@ -98,7 +98,7 @@ export function useCreateGame() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (data: { opponent: 'person' | 'stockfish'; player_color: 'w' | 'b' }) =>
+    mutationFn: (data: { opponent: 'person' | 'stockfish'; player_color: 'w' | 'b'; initial_time_seconds?: number; increment_seconds?: number }) =>
       api.createGame(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
@@ -156,6 +156,18 @@ export function useResignGame() {
 
   return useMutation({
     mutationFn: (gameId: string) => api.resignGame(gameId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['games'] })
+    },
+  })
+}
+
+// ─── Delete game ───
+export function useDeleteGame() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (gameId: string) => api.deleteGame(gameId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
     },

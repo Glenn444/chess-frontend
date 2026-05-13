@@ -100,7 +100,9 @@ export function Login() {
   const onSubmit = async (data: LoginForm) => {
     try {
       await loginMutation.mutateAsync(data)
-      navigate('/games')
+      const params = new URLSearchParams(window.location.search)
+      const redirect = params.get('redirect')
+      navigate(redirect || '/games')
     } catch {
       // server error shown via loginMutation.error below
     }
@@ -194,7 +196,7 @@ export function Login() {
           </div>
 
           <p style={{ marginTop: 28, color: 'var(--color-text-secondary)', fontSize: 14, textAlign: 'center' }}>
-            New to Chesske? <a onClick={() => navigate('/register')} style={{ color: 'var(--color-amber)', cursor: 'pointer', fontWeight: 500 }}>Create account</a>
+            New to Chesske? <a onClick={() => { const p = new URLSearchParams(window.location.search); const r = p.get('redirect'); navigate(r ? `/register?redirect=${encodeURIComponent(r)}` : '/register') }} style={{ color: 'var(--color-amber)', cursor: 'pointer', fontWeight: 500 }}>Create account</a>
           </p>
           <p style={{ marginTop: 16, color: 'var(--color-text-muted)', fontSize: 12, textAlign: 'center' }}>
             <a onClick={() => navigate('/')} style={{ color: 'var(--color-text-muted)', cursor: 'pointer' }}>← Back to home</a>
@@ -246,7 +248,10 @@ export function Register() {
   const onSubmit = async (data: RegisterForm) => {
     try {
       await registerMutation.mutateAsync(data)
-      navigate(`/verify-email?email=${encodeURIComponent(data.email)}`)
+      const params = new URLSearchParams(window.location.search)
+      const redirect = params.get('redirect')
+      const qs = `email=${encodeURIComponent(data.email)}${redirect ? `&redirect=${encodeURIComponent(redirect)}` : ''}`
+      navigate(`/verify-email?${qs}`)
     } catch {
       // server error shown via registerMutation.error
     }
@@ -331,7 +336,7 @@ export function Register() {
           </div>
 
           <p style={{ marginTop: 24, color: 'var(--color-text-secondary)', fontSize: 14, textAlign: 'center' }}>
-            Already have one? <a onClick={() => navigate('/login')} style={{ color: 'var(--color-amber)', cursor: 'pointer', fontWeight: 500 }}>Log in</a>
+            Already have one? <a onClick={() => { const p = new URLSearchParams(window.location.search); const r = p.get('redirect'); navigate(r ? `/login?redirect=${encodeURIComponent(r)}` : '/login') }} style={{ color: 'var(--color-amber)', cursor: 'pointer', fontWeight: 500 }}>Log in</a>
           </p>
         </form>
       </div>

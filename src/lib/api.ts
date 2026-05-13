@@ -1,4 +1,4 @@
-const BASE_URL = 'https://api.chesske.com'
+const BASE_URL = import.meta.env.VITE_API_URL ?? 'https://api.chesske.com'
 
 let tokenGetter: (() => string | null) = () => null
 let refreshTokenGetter: (() => string | null) = () => null
@@ -118,12 +118,13 @@ export const api = {
 
   // Games
   listGames: () => request<unknown[]>('GET', '/games', undefined, true),
-  createGame: (data: { opponent: 'person' | 'stockfish'; player_color: 'w' | 'b' }) => request<unknown>('POST', '/games', data, true),
+  createGame: (data: { opponent: 'person' | 'stockfish'; player_color: 'w' | 'b'; initial_time_seconds?: number; increment_seconds?: number }) => request<unknown>('POST', '/games', data, true),
   myGames: () => request<unknown[]>('GET', '/games/mine', undefined, true),
   getGame: (id: string) => request<unknown>('GET', `/games/${id}`, undefined, true),
   joinGame: (id: string) => request<unknown>('POST', `/games/${id}/join`, undefined, true),
   getMoves: (id: string) => request<unknown[]>('GET', `/games/${id}/moves`, undefined, true),
   resignGame: (id: string) => request<unknown>('POST', `/games/${id}/resign`, undefined, true),
+  deleteGame: (id: string) => request<unknown>('DELETE', `/games/${id}`, undefined, true),
 
   // Chat
   getChat: (gameId: string) => request<unknown[]>('GET', `/games/${gameId}/chat`, undefined, true),

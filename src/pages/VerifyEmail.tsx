@@ -69,7 +69,7 @@ export default function VerifyEmail() {
           <p style={{ color: 'var(--color-text-secondary)', margin: '0 0 24px', fontSize: 14 }}>
             Your email has been confirmed. You can now log in.
           </p>
-          <button onClick={() => navigate('/login')} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '14px 28px', border: 'none', cursor: 'pointer', fontSize: 15 }}>
+          <button onClick={() => { const p = new URLSearchParams(window.location.search); const r = p.get('redirect'); navigate(r ? `/login?redirect=${encodeURIComponent(r)}` : '/login') }} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '14px 28px', border: 'none', cursor: 'pointer', fontSize: 15 }}>
             Go to login
           </button>
         </div>

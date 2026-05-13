@@ -5,6 +5,7 @@ import { PieceThemeProvider } from './lib/PieceThemeContext'
 import { useAuth } from './lib/authStore'
 import { useMe } from './lib/queries'
 import FloatingNav from './components/FloatingNav'
+import ToastContainer from './components/Toast'
 import Landing from './pages/Landing'
 import { Login, Register } from './pages/Auth'
 import Dashboard from './pages/Dashboard'
@@ -30,7 +31,8 @@ function SplashScreen() {
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const user = useAuth(s => s.user)
-  if (!user) return <Navigate to="/login" replace />
+  const location = window.location.pathname + window.location.search
+  if (!user) return <Navigate to={`/login?redirect=${encodeURIComponent(location)}`} replace />
   return <>{children}</>
 }
 
@@ -71,6 +73,7 @@ export default function App() {
         <Route path="/game/:id" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
         <Route path="/game" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
       </Routes>
+      <ToastContainer />
       {!user && <FloatingNav />}
     </PieceThemeProvider>
   )

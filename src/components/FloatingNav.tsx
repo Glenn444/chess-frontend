@@ -4,20 +4,9 @@ import Icon from './icons/Icon'
 const LINKS = [
   { to: '/', label: 'Home', icon: 'user' as const },
   { to: '/events', label: 'Events', icon: 'zap' as const },
-  { to: '/login', label: 'Log in', icon: 'lock' as const },
+  { to: '/login', label: 'Log in', icon: 'user' as const },
   { to: '/register', label: 'Sign up', icon: 'plus' as const },
 ]
-
-function PadlockIcon({ size = 18, active = false }: { size?: number; active?: boolean }) {
-  const color = active ? '#ffffff' : 'currentColor'
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-      <rect x="5" y="11" width="14" height="11" rx="2" />
-      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-      <circle cx="12" cy="16" r="1" fill={color} stroke="none" />
-    </svg>
-  )
-}
 
 const GUEST_ROUTES = ['/', '/events', '/announcements', '/login', '/register']
 
@@ -73,11 +62,7 @@ export default function FloatingNav() {
               if (!active) e.currentTarget.style.color = 'rgba(255, 255, 255, 0.5)'
             }}
           >
-            {item.icon === 'lock' ? (
-              <PadlockIcon size={20} active={active} />
-            ) : (
-              <Icon name={item.icon} size={20} color={active ? '#ffffff' : 'currentColor'} />
-            )}
+            <Icon name={item.icon} size={20} color={active ? '#ffffff' : 'currentColor'} />
             <span style={{ fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}>{item.label}</span>
           </button>
         )

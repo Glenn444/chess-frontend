@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { GameSocket } from './websocket'
+import type { Position } from '../components/Board'
+import { fenToPosition, applyMove } from './chess'
 
 export interface GameMove {
   move: string
@@ -32,6 +34,7 @@ export interface GameState {
 interface LiveGameStore {
   socket: GameSocket | null
   gameState: GameState | null
+  position: Position | null
   moves: GameMove[]
   chatMessages: ChatMessage[]
   error: string | null
@@ -47,6 +50,7 @@ interface LiveGameStore {
 export const useLiveGame = create<LiveGameStore>((set, get) => ({
   socket: null,
   gameState: null,
+  position: null,
   moves: [],
   chatMessages: [],
   error: null,
@@ -60,7 +64,8 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
 
     socket.on('game_state', (_, payload) => {
       const state = payload as GameState
-      set({ gameState: state, error: null })
+      const position = fenToPosition(state.fen || '')
+      set({ gameState: state, position, error: null })
     })
 
     socket.on('make_move', (_, payload) => {
@@ -68,9 +73,11 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
       set(s => {
         const newMoves = [...s.moves, move]
         const state = s.gameState
+        const newPosition = s.position ? applyMove(s.position, move.move) : null
         if (state) {
           return {
             moves: newMoves,
+            position: newPosition,
             gameState: {
               ...state,
               current_player: move.current_player,
@@ -80,7 +87,7 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
             },
           }
         }
-        return { moves: newMoves }
+        return { moves: newMoves, position: newPosition }
       })
     })
 
@@ -102,12 +109,12 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
       set({ opponentDisconnected: false })
     })
 
-    set({ socket, moves: [], chatMessages: [], error: null, opponentDisconnected: false })
+    set({ socket, position: null, moves: [], chatMessages: [], error: null, opponentDisconnected: false })
   },
 
   disconnect: () => {
     get().socket?.destroy()
-    set({ socket: null, gameState: null, moves: [], chatMessages: [], error: null })
+    set({ socket: null, gameState: null, position: null, moves: [], chatMessages: [], error: null })
   },
 
   makeMove: (move) => {
