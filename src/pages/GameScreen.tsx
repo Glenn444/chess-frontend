@@ -140,10 +140,20 @@ export default function GameScreen() {
     console.log('[GameScreen] WS effect — gameId:', gameId, '| wsToken:', wsToken ? 'set' : 'NULL', '| gameState:', restGame?.state)
     if (gameId && wsToken && restGame?.state === 'active') {
       connect(gameId, wsToken)
-      voice.requestMic()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, wsToken, restGame?.state])
+
+  // White player auto-initiates voice once game_state arrives; black auto-answers via useVoiceCall
+  const voiceInitiated = useRef(false)
+  useEffect(() => {
+    if (!gameState || !socket || voiceInitiated.current) return
+    if (userColor === 'w') {
+      voiceInitiated.current = true
+      voice.startCall()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState, userColor, socket])
 
   // Disconnect only when the GameScreen unmounts
   useEffect(() => {
@@ -404,7 +414,11 @@ export default function GameScreen() {
       <main className="game-main" style={{ flex: 1, padding: 24, display: 'grid', gridTemplateColumns: '300px 1fr 320px', gap: 16, minHeight: '100vh' }}>
         {/* LEFT — voice + chat */}
         <div className="game-left" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
-          <VoiceBar muted={voice.muted} onToggleMute={voice.toggleMute} />
+          <VoiceBar
+            muted={voice.muted}
+            status={voice.status}
+            onToggleMute={voice.toggleMute}
+          />
           <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
             <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, display: 'flex', flexDirection: 'column', height: chatCollapsed ? 48 : '100%', overflow: 'hidden', transition: 'height .2s ease' }}>
               <div onClick={() => setChatCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', cursor: 'pointer', borderBottom: chatCollapsed ? 'none' : '1px solid var(--color-border)' }}>
