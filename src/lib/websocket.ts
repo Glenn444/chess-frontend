@@ -24,22 +24,27 @@ export class GameSocket {
 
   private connect() {
     if (this.destroyed) return
+    console.log('[WS] connecting to game', this.gameId)
     this.ws = createGameSocket(this.gameId)
 
     this.ws.onopen = () => {
-      // Server will send auth_required first
+      console.log('[WS] open — waiting for auth_required')
     }
 
     this.ws.onmessage = (msg) => {
       const event = wsParseInbound(msg.data as string)
-      if (!event) return
-
+      if (!event) {
+        console.warn('[WS] unparseable message:', msg.data)
+        return
+      }
       switch (event.type) {
         case 'auth_required':
+          console.log('[WS] sending auth token')
           wsSend(this.ws!, { type: 'auth', payload: { token: this.token } })
           break
 
         case 'game_state':
+          console.log('[WS] ← game_state')
           this.startPing()
           this.emit(event)
           break
@@ -49,19 +54,22 @@ export class GameSocket {
           break
 
         default:
+          console.log('[WS] ←', event.type, 'payload' in event ? event.payload : '')
           this.emit(event)
       }
     }
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (e) => {
+      console.log('[WS] closed — code:', e.code, 'reason:', e.reason, 'clean:', e.wasClean)
       this.stopPing()
       if (!this.destroyed) {
+        console.log('[WS] reconnecting in 3s…')
         this.reconnectTimer = setTimeout(() => this.connect(), 3000)
       }
     }
 
-    this.ws.onerror = () => {
-      // onclose fires afterward, triggering reconnect
+    this.ws.onerror = (e) => {
+      console.error('[WS] error event', e)
     }
   }
 
@@ -75,7 +83,12 @@ export class GameSocket {
   }
 
   send(type: string, payload?: unknown) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    const state = this.ws ? ['CONNECTING','OPEN','CLOSING','CLOSED'][this.ws.readyState] : 'NO_SOCKET'
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('[WS] send blocked — socket state:', state, '— type:', type)
+      return
+    }
+    console.log('[WS] →', type, payload ?? '')
     switch (type) {
       case 'make_move':
         wsSend(this.ws, { type: 'make_move', payload: payload as { move: string } })

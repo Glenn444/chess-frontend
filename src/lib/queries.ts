@@ -1,17 +1,26 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, type CreateGameRequest } from './api'
+import { api, fetchFreshToken, type CreateGameRequest } from './api'
 import { useAuth } from './authStore'
 import type { LoginForm, RegisterForm } from './schemas'
 
 // ─── /me — rehydrate user profile via HttpOnly cookie ───
 export function useMe() {
   const setUser = useAuth(s => s.setUser)
+  const setWsToken = useAuth(s => s.setWsToken)
 
   return useQuery({
     queryKey: ['me'],
     queryFn: async () => {
       const me = await api.me()
       setUser(me)
+      // Always refresh wsToken on page load so a stale sessionStorage token never causes WS auth to fail.
+      const token = await fetchFreshToken()
+      if (token) {
+        console.log('[useMe] wsToken refreshed')
+        setWsToken(token)
+      } else {
+        console.warn('[useMe] could not obtain wsToken — WS will not connect until next login')
+      }
       return me
     },
     retry: false,

@@ -1,10 +1,26 @@
-import { memo } from 'react'
+import { memo, useState, useEffect } from 'react'
 import Avatar from '../Avatar'
 
-export default memo(function PlayerCard({ player, isTurn, time, lowTime }: {
+export default memo(function PlayerCard({ player, isTurn, initialSeconds, gameActive }: {
   player: { name: string; rating: string; title?: string; color: string; online: boolean; avatarColor: string }
-  isTurn: boolean; time: string; lowTime: boolean
+  isTurn: boolean
+  initialSeconds: number
+  gameActive: boolean
 }) {
+  const [secs, setSecs] = useState(initialSeconds)
+
+  useEffect(() => { setSecs(initialSeconds) }, [initialSeconds])
+
+  useEffect(() => {
+    if (!isTurn || !gameActive) return
+    const id = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000)
+    return () => clearInterval(id)
+  }, [isTurn, gameActive])
+
+  const mins = Math.floor(secs / 60)
+  const lowTime = mins < 1
+  const display = `${mins}:${(secs % 60).toString().padStart(2, '0')}`
+
   return (
     <div style={{
       padding: 14, display: 'flex', alignItems: 'center', gap: 14,
@@ -26,7 +42,6 @@ export default memo(function PlayerCard({ player, isTurn, time, lowTime }: {
           <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Playing {player.color}</span>
           <span style={{ fontSize: 12, color: player.online ? 'var(--color-green)' : 'var(--color-text-muted)' }}>● {player.online ? 'Online' : 'Away'}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 1, marginTop: 8, minHeight: 18 }} />
       </div>
       <div style={{
         background: lowTime ? 'rgba(210,106,106,0.15)' : (isTurn ? 'rgba(229,169,59,0.12)' : 'var(--color-bg-base)'),
@@ -36,7 +51,7 @@ export default memo(function PlayerCard({ player, isTurn, time, lowTime }: {
         <div className="font-mono font-display" style={{
           fontSize: 24, fontWeight: 500, letterSpacing: -0.5,
           color: lowTime ? 'var(--color-red)' : (isTurn ? 'var(--color-amber)' : 'var(--color-text-primary)'),
-        }}>{time}</div>
+        }}>{display}</div>
         <div style={{ fontSize: 10, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2, fontWeight: 600 }}>
           {isTurn ? 'Thinking' : 'Waiting'}
         </div>

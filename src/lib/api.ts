@@ -6,6 +6,23 @@ const BASE_URL = import.meta.env.VITE_API_URL ?? 'https://api.chesske.com'
 
 let refreshPromise: Promise<boolean> | null = null
 
+// Called on page load when the user is cookie-authenticated but has no wsToken in memory.
+// Returns the new access_token so callers can store it for WebSocket auth.
+export async function fetchFreshToken(): Promise<string | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/users/refresh-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    })
+    if (!res.ok) return null
+    const data = await res.json().catch(() => ({}))
+    return typeof data.access_token === 'string' ? data.access_token : null
+  } catch {
+    return null
+  }
+}
+
 async function tryRefreshToken(): Promise<boolean> {
   if (refreshPromise) return refreshPromise
 
@@ -117,8 +134,8 @@ export interface Game {
   id: string
   white_player_id: string
   black_player_id: string
-  white_username?: string
-  black_username?: string
+  white_player_name?: string
+  black_player_name?: string
   state: GameState
   in_check: boolean
   current_player: PlayerColor
@@ -229,18 +246,25 @@ export interface WSAuthRequired {
   type: 'auth_required'
 }
 
-// Sent after successful auth and after reconnect
-// payload mirrors pieces.GameState serialized by board.SerializeGameState
+// Sent after successful auth and after reconnect.
+// Backend serialises as PascalCase Go struct nested under "game".
+export interface WSBoardCell {
+  Occupied: boolean
+  Piece: { PieceType: string; Color: 'w' | 'b'; Position: string; Points: number } | null
+}
+
 export interface WSGameStateEvent {
   type: 'game_state'
   payload: {
-    current_player: PlayerColor
-    board: Record<Square, PieceSymbol>
-    move_number: number
-    status: GameState
-    in_check: boolean
-    play_against: 'person' | 'stockfish'
-    user_color: PlayerColor
+    game: {
+      CurrentPlayer: PlayerColor
+      Board: WSBoardCell[][]   // [rankIdx 0=rank1 … 7=rank8][fileIdx 0=a … 7=h]
+      MoveNumber: number
+      Status: string
+      InCheck: boolean
+      PlayAgainst: string
+      UserColor: string        // may be "" — frontend derives color from REST fallback
+    }
     opponent_username?: string
   }
 }

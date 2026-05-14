@@ -1,8 +1,28 @@
 import { create } from 'zustand'
 import { GameSocket } from './websocket'
-import { type WSInboundEvent, type ChatMessage } from './api'
+import { type WSInboundEvent, type ChatMessage, type WSBoardCell } from './api'
 import { boardToPosition, applyMove } from './chess'
 import type { Position } from '../components/Board'
+
+const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+
+// Convert backend 2D Board array → flat { "e2": "P", "a8": "r", ... } map.
+// rankIdx 0 = rank 1 (white's back rank), rankIdx 7 = rank 8 (black's back rank).
+function flattenBoard(board: WSBoardCell[][]): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (let rankIdx = 0; rankIdx < 8; rankIdx++) {
+    for (let fileIdx = 0; fileIdx < 8; fileIdx++) {
+      const cell = board[rankIdx]?.[fileIdx]
+      if (cell?.Occupied && cell.Piece) {
+        const sq = FILES[fileIdx] + (rankIdx + 1)
+        result[sq] = cell.Piece.Color === 'w'
+          ? cell.Piece.PieceType.toUpperCase()
+          : cell.Piece.PieceType.toLowerCase()
+      }
+    }
+  }
+  return result
+}
 
 export interface LiveGameState {
   current_player: 'w' | 'b'
@@ -11,7 +31,7 @@ export interface LiveGameState {
   status: string
   in_check: boolean
   play_against: 'person' | 'stockfish'
-  user_color: 'w' | 'b'
+  user_color?: 'w' | 'b'   // undefined when backend sends "" — GameScreen falls back to REST
   opponent_username?: string
 }
 
@@ -49,6 +69,7 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
   opponentDisconnected: false,
 
   connect: (gameId, token) => {
+    console.log('[gameStore] connect — gameId:', gameId, 'hasToken:', !!token)
     get().socket?.destroy()
 
     const socket = new GameSocket(gameId, token)
@@ -56,13 +77,21 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
     socket.on((event: WSInboundEvent) => {
       switch (event.type) {
         case 'game_state': {
-          const gs = event.payload
-          const pos = boardToPosition(gs.board)
-          set({
-            gameState: gs,
-            position: pos,
-            error: null,
-          })
+          const raw = event.payload
+          const g = raw.game
+          const flatBoard = flattenBoard(g.Board)
+          const gs: LiveGameState = {
+            current_player: g.CurrentPlayer,
+            board: flatBoard,
+            move_number: g.MoveNumber,
+            status: g.Status,
+            in_check: g.InCheck,
+            play_against: (g.PlayAgainst as 'person' | 'stockfish') || 'person',
+            user_color: g.UserColor === 'w' || g.UserColor === 'b' ? g.UserColor : undefined,
+            opponent_username: raw.opponent_username,
+          }
+          const pos = boardToPosition(flatBoard)
+          set({ gameState: gs, position: pos, error: null })
           break
         }
 
@@ -113,7 +142,9 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
   },
 
   makeMove: (move) => {
-    get().socket?.send('make_move', { move })
+    const socket = get().socket
+    console.log('[gameStore] makeMove:', move, '— socket:', socket ? 'exists' : 'NULL')
+    socket?.send('make_move', { move })
   },
 
   sendChat: (content) => {
