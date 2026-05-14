@@ -33,9 +33,12 @@ export default function Games() {
   const deleteGame = useDeleteGame()
   const addToast = useToasts(s => s.addToast)
 
+  const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
+
   const displayName = user?.username || 'Player'
-  const pendingGames = myGames.filter((g: any) => g.status === 'waiting')
+  const pendingGames = myGames.filter((g: any) => g.state === 'waiting')
   const hasPendingGame = pendingGames.length > 0
+  const myGameIds = new Set(myGames.map((g: any) => g.id))
 
   const handleCreateGame = async () => {
     if (hasPendingGame) {
@@ -217,9 +220,7 @@ export default function Games() {
           {loadingWaiting ? (
             <p style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>Loading…</p>
           ) : (() => {
-            const otherPeoplesGames = waitingGames.filter((g: any) =>
-              g.white_player !== user?.username && g.black_player !== user?.username
-            )
+            const otherPeoplesGames = waitingGames.filter((g: any) => !myGameIds.has(g.id))
             if (otherPeoplesGames.length === 0) {
               return (
                 <div style={{ padding: '24px 18px', textAlign: 'center', background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 14 }}>
@@ -238,11 +239,11 @@ export default function Games() {
                     background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)',
                     borderRadius: 14,
                   }}>
-                    <Avatar name={g.white_player} size={isMobile ? 30 : 36} color="amber" />
+                    <Avatar name="Opponent" size={isMobile ? 30 : 36} color="amber" />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>{g.white_player}</div>
+                      <div style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>Waiting player</div>
                       <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                        Playing white · Waiting for opponent
+                        Waiting for opponent
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
@@ -286,10 +287,8 @@ export default function Games() {
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {myGames.map((g: any) => {
-                const opponent = g.white_player === user?.username ? g.black_player : g.white_player
-                const amWhite = g.player_color === 'w'
-                const hasOpponent = !!(g.white_player && g.black_player)
-                const opponentOnline = hasOpponent && g.status === 'playing'
+                const hasOpponent = g.white_player_id !== ZERO_UUID && g.black_player_id !== ZERO_UUID
+                const opponentOnline = hasOpponent && g.state === 'active'
                 return (
                 <div key={g.id} style={{
                   display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14,
@@ -299,14 +298,14 @@ export default function Games() {
                 }}>
                   <div onClick={() => navigate(`/game/${g.id}`)} style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14, flex: 1, minWidth: 0, cursor: 'pointer' }}>
                     <div style={{ width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: 10, overflow: 'hidden', flexShrink: 0, border: '1px solid var(--color-border-strong)' }}>
-                      <MiniBoard preset={g.status === 'playing' ? 'mid' : 'early'} />
+                      <MiniBoard preset={g.state === 'active' ? 'mid' : 'early'} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>
-                          vs {opponent || '…'}
+                          {hasOpponent ? 'vs Opponent' : 'Waiting…'}
                         </span>
-                        {opponent && (
+                        {hasOpponent && (
                           <span style={{
                             width: 7, height: 7, borderRadius: '50%',
                             background: opponentOnline ? 'var(--color-green)' : 'var(--color-text-muted)',
@@ -314,22 +313,19 @@ export default function Games() {
                         )}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                        {g.status === 'waiting' ? (
+                        {g.state === 'waiting' ? (
                           'Waiting for opponent…'
-                        ) : g.current_player === g.player_color ? (
-                          <span style={{ color: 'var(--color-amber)' }}>● Your turn</span>
                         ) : (
-                          'Opponent\'s turn'
+                          <span style={{ color: 'var(--color-amber)' }}>● Active game</span>
                         )}
-                        <span style={{ marginLeft: 6 }}>· {amWhite ? 'White' : 'Black'}</span>
                       </div>
                     </div>
                     <span style={{
                       padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-                      background: g.status === 'playing' ? 'rgba(95,174,126,0.12)' : 'rgba(229,169,59,0.12)',
-                      color: g.status === 'playing' ? 'var(--color-green)' : 'var(--color-amber)',
+                      background: g.state === 'active' ? 'rgba(95,174,126,0.12)' : 'rgba(229,169,59,0.12)',
+                      color: g.state === 'active' ? 'var(--color-green)' : 'var(--color-amber)',
                     }}>
-                      {g.status === 'playing' ? 'Active' : 'Waiting'}
+                      {g.state === 'active' ? 'Active' : 'Waiting'}
                     </span>
                     {!isMobile && <Icon name="arrow-right" size={16} color="var(--color-text-muted)" />}
                   </div>

@@ -43,7 +43,6 @@ function GuestRoute({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
-  const token = useAuth(s => s.token)
   const { data: me, isLoading } = useMe()
   const setUser = useAuth(s => s.setUser)
   const user = useAuth(s => s.user)
@@ -53,8 +52,8 @@ export default function App() {
     if (me) setUser(me)
   }, [me, setUser])
 
-  // Only show splash while we have a stored token and are verifying it
-  if (token && isLoading) return <SplashScreen />
+  // Show splash while checking auth status via cookie
+  if (isLoading) return <SplashScreen />
 
   return (
     <PieceThemeProvider>

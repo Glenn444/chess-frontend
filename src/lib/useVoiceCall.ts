@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { GameSocket } from './websocket'
+import type { WSInboundEvent } from './api'
 import { api } from './api'
 
 interface VoiceState {
@@ -82,7 +83,6 @@ export function useVoiceCall(socket: GameSocket | null) {
     }
   }
 
-  // ── Request mic permission on mount (required to play) ──
   const requestMic = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -94,56 +94,62 @@ export function useVoiceCall(socket: GameSocket | null) {
     }
   }, [])
 
-  // ── Listen for WebSocket voice events ──
+  // Listen for WebSocket voice events
   useEffect(() => {
     if (!socket) return
 
-    const unsubs = [
-      // Receiver side — fetch TURN, then auto-answer
-      socket.on('voice_offer', async (_, payload) => {
-        try {
-          const iceConfig = await fetchIceServers()
-          const pc = createPC(iceConfig)
-          pcRef.current = pc
+    const unsub = socket.on(async (event: WSInboundEvent) => {
+      switch (event.type) {
+        case 'voice_offer': {
+          try {
+            const iceConfig = await fetchIceServers()
+            const pc = createPC(iceConfig)
+            pcRef.current = pc
 
-          const stream = await getLocalStream()
-          stream.getTracks().forEach(t => pc.addTrack(t, stream))
+            const stream = await getLocalStream()
+            stream.getTracks().forEach(t => pc.addTrack(t, stream))
 
-          await pc.setRemoteDescription(new RTCSessionDescription(payload as RTCSessionDescriptionInit))
-          const answer = await pc.createAnswer()
-          await pc.setLocalDescription(answer)
-          socket.send('voice_answer', pc.localDescription)
-        } catch {
-          setState(s => ({ ...s, error: 'Microphone access denied' }))
-          hangup()
+            await pc.setRemoteDescription(new RTCSessionDescription(event.payload))
+            const answer = await pc.createAnswer()
+            await pc.setLocalDescription(answer)
+            socket.send('voice_answer', pc.localDescription)
+          } catch {
+            setState(s => ({ ...s, error: 'Microphone access denied' }))
+            hangup()
+          }
+          break
         }
-      }),
 
-      socket.on('voice_answer', async (_, payload) => {
-        try {
-          await pcRef.current?.setRemoteDescription(
-            new RTCSessionDescription(payload as RTCSessionDescriptionInit)
-          )
-          setState(s => ({ ...s, status: 'connected' }))
-        } catch {
-          setState(s => ({ ...s, error: 'Failed to connect audio' }))
-          hangup()
+        case 'voice_answer': {
+          try {
+            await pcRef.current?.setRemoteDescription(
+              new RTCSessionDescription(event.payload)
+            )
+            setState(s => ({ ...s, status: 'connected' }))
+          } catch {
+            setState(s => ({ ...s, error: 'Failed to connect audio' }))
+            hangup()
+          }
+          break
         }
-      }),
 
-      socket.on('voice_ice', async (_, payload) => {
-        try {
-          await pcRef.current?.addIceCandidate(new RTCIceCandidate(payload as RTCIceCandidateInit))
-        } catch { /* ignore invalid candidates */ }
-      }),
+        case 'voice_ice': {
+          try {
+            await pcRef.current?.addIceCandidate(new RTCIceCandidate(event.payload))
+          } catch { /* ignore invalid candidates */ }
+          break
+        }
 
-      socket.on('voice_end', () => hangup()),
-    ]
+        case 'voice_end': {
+          hangup()
+          break
+        }
+      }
+    })
 
-    return () => unsubs.forEach(u => u())
+    return () => unsub()
   }, [socket, hangup, createPC])
 
-  // ── Start call — fetch TURN, then create offer ──
   const startCall = useCallback(async () => {
     if (!socket || pcRef.current) return
     try {
@@ -162,13 +168,11 @@ export function useVoiceCall(socket: GameSocket | null) {
     }
   }, [socket, createPC])
 
-  // ── End call ──
   const endCall = useCallback(() => {
-    socket?.send('voice_end', {})
+    socket?.send('voice_end')
     hangup()
   }, [socket, hangup])
 
-  // ── Toggle mute ──
   const toggleMute = useCallback(() => {
     setState(s => {
       const newMuted = !s.muted

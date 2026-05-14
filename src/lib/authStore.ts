@@ -1,8 +1,4 @@
 import { create } from 'zustand'
-import { setTokenGetter, setRefreshTokenGetter, setOnTokensRefreshed } from './api'
-
-const TOKEN_KEY = 'chesske_token'
-const REFRESH_KEY = 'chesske_refresh'
 
 export interface AuthUser {
   username: string
@@ -14,42 +10,20 @@ export interface AuthUser {
 
 interface AuthState {
   user: AuthUser | null
-  token: string | null
-  refreshToken: string | null
+  wsToken: string | null     // access token for WebSocket auth (memory only)
 
-  setAuth: (token: string, refreshToken: string) => void
   setUser: (user: AuthUser | null) => void
+  setWsToken: (token: string) => void
   logout: () => void
 }
 
-export const useAuth = create<AuthState>((set) => {
-  // Hydrate tokens from localStorage on init
-  const storedToken = localStorage.getItem(TOKEN_KEY)
-  const storedRefresh = localStorage.getItem(REFRESH_KEY)
+export const useAuth = create<AuthState>((set) => ({
+  user: null,
+  wsToken: null,
 
-  // Wire up the API client's token getters immediately
-  setTokenGetter(() => useAuth.getState().token)
-  setRefreshTokenGetter(() => useAuth.getState().refreshToken)
-  setOnTokensRefreshed((access, refresh) => useAuth.getState().setAuth(access, refresh))
+  setUser: (user) => set({ user }),
 
-  return {
-    user: null,
-    token: storedToken,
-    refreshToken: storedRefresh,
+  setWsToken: (wsToken) => set({ wsToken }),
 
-    setAuth: (token, refreshToken) => {
-      localStorage.setItem(TOKEN_KEY, token)
-      localStorage.setItem(REFRESH_KEY, refreshToken)
-      setTokenGetter(() => useAuth.getState().token)
-      set({ token, refreshToken })
-    },
-
-    setUser: (user) => set({ user }),
-
-    logout: () => {
-      localStorage.removeItem(TOKEN_KEY)
-      localStorage.removeItem(REFRESH_KEY)
-      set({ user: null, token: null, refreshToken: null })
-    },
-  }
-})
+  logout: () => set({ user: null, wsToken: null }),
+}))

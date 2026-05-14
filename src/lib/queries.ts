@@ -1,16 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from './api'
+import { api, type CreateGameRequest } from './api'
 import { useAuth } from './authStore'
 import type { LoginForm, RegisterForm } from './schemas'
 
-// ─── /me — rehydrate user profile using stored JWT ───
+// ─── /me — rehydrate user profile via HttpOnly cookie ───
 export function useMe() {
-  const token = useAuth(s => s.token)
+  const setUser = useAuth(s => s.setUser)
 
   return useQuery({
     queryKey: ['me'],
-    queryFn: () => api.me(),
-    enabled: !!token,
+    queryFn: async () => {
+      const me = await api.me()
+      setUser(me)
+      return me
+    },
     retry: false,
     staleTime: 5 * 60 * 1000,
   })
@@ -19,16 +22,16 @@ export function useMe() {
 // ─── Signin (login) mutation ───
 export function useLogin() {
   const queryClient = useQueryClient()
-  const setAuth = useAuth(s => s.setAuth)
   const setUser = useAuth(s => s.setUser)
+  const setWsToken = useAuth(s => s.setWsToken)
 
   return useMutation({
     mutationFn: (data: LoginForm) => api.signin(data),
     onSuccess: async (signinData) => {
-      // Store tokens
-      setAuth(signinData.access_token, signinData.refresh_token)
+      // Cookies set by browser. Store access token in memory for WebSocket auth.
+      setWsToken(signinData.access_token)
 
-      // Fetch user profile with the new token
+      // Fetch user profile — access_token cookie sent automatically.
       try {
         const me = await api.me()
         setUser(me)
@@ -98,8 +101,7 @@ export function useCreateGame() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (data: { opponent: 'person' | 'stockfish'; player_color: 'w' | 'b'; initial_time_seconds?: number; increment_seconds?: number }) =>
-      api.createGame(data),
+    mutationFn: (data: CreateGameRequest) => api.createGame(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
     },
@@ -114,38 +116,6 @@ export function useJoinGame() {
     mutationFn: (gameId: string) => api.joinGame(gameId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
-    },
-  })
-}
-
-// ─── Game moves ───
-export function useGameMoves(gameId: string | null) {
-  return useQuery({
-    queryKey: ['games', gameId, 'moves'],
-    queryFn: () => api.getMoves(gameId!),
-    enabled: !!gameId,
-    refetchInterval: 3_000,
-  })
-}
-
-// ─── Chat messages ───
-export function useGameChat(gameId: string | null) {
-  return useQuery({
-    queryKey: ['games', gameId, 'chat'],
-    queryFn: () => api.getChat(gameId!),
-    enabled: !!gameId,
-    refetchInterval: 3_000,
-  })
-}
-
-// ─── Send chat ───
-export function useSendChat(gameId: string) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (content: string) => api.sendChat(gameId, content),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['games', gameId, 'chat'] })
     },
   })
 }

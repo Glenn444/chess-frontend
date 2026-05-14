@@ -1,37 +1,23 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'https://api.chesske.com'
 
-let tokenGetter: (() => string | null) = () => null
-let refreshTokenGetter: (() => string | null) = () => null
-let onTokensRefreshed: ((access: string, refresh: string) => void) | null = null
-
-export function setTokenGetter(fn: () => string | null) {
-  tokenGetter = fn
-}
-export function setRefreshTokenGetter(fn: () => string | null) {
-  refreshTokenGetter = fn
-}
-export function setOnTokensRefreshed(fn: (access: string, refresh: string) => void) {
-  onTokensRefreshed = fn
-}
+// Auth is handled via HttpOnly cookies set by the server on signin.
+// The browser sends them automatically with `credentials: 'include'`.
+// No Authorization header or client-side token management needed.
 
 let refreshPromise: Promise<boolean> | null = null
 
 async function tryRefreshToken(): Promise<boolean> {
   if (refreshPromise) return refreshPromise
 
-  const refresh = refreshTokenGetter()
-  if (!refresh) return false
-
   refreshPromise = (async () => {
     try {
       const res = await fetch(`${BASE_URL}/users/refresh-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refresh }),
+        credentials: 'include',
       })
       if (!res.ok) return false
-      const data = await res.json()
-      onTokensRefreshed?.(data.access_token, data.refresh_token || refresh)
+      // Server sets new access_token cookie in the response
       return true
     } catch {
       return false
@@ -53,23 +39,16 @@ async function request<T>(
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
-
-    if (auth) {
-      const token = tokenGetter()
-      if (token) headers['Authorization'] = `Bearer ${token}`
-    }
-
     const res = await fetch(`${BASE_URL}${path}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      credentials: 'include',
     })
-
     if (res.ok) {
       if (res.status === 204) return undefined as T
       return res.json() as Promise<T>
     }
-
     const err = await res.json().catch(() => ({ message: res.statusText }))
     throw new ApiError(res.status, err.message || err.error || res.statusText, err)
   }
@@ -95,47 +74,303 @@ export class ApiError extends Error {
   }
 }
 
-// ── Auth ──
-export interface SignupRequest { email: string; password: string; username: string }
-export interface SignupResponse { created_at: string; email: string; password_changed_at: string; username: string }
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
 
-export interface SigninRequest { email: string; password: string }
-export interface SigninResponse { access_token: string; refresh_token: string; username: string; password_changed_at: string; last_login_at: string }
+export type GameState =
+  | 'waiting'
+  | 'active'
+  | 'checkmate'
+  | 'stalemate'
+  | 'resign'
+  | 'draw'
+  | 'abandoned'
 
-export interface RefreshResponse { access_token: string; message: string }
+export type PlayerColor = 'w' | 'b'
 
-export interface MeResponse { created_at: string; email: string; email_confirmed: boolean; is_active: boolean; last_login_at: string; username: string }
+export type PieceSymbol =
+  | 'r' | 'n' | 'b' | 'q' | 'k' | 'p'   // black pieces (lowercase)
+  | 'R' | 'N' | 'B' | 'Q' | 'K' | 'P'   // white pieces (uppercase)
+
+export type Square = string   // e.g. "e4", "a1"
+
+// ─────────────────────────────────────────────
+// Board
+// ─────────────────────────────────────────────
+
+export interface BoardState {
+  board: Record<Square, PieceSymbol>
+  stockfish_game: string | null
+}
+
+// board_state arrives as a JSON string — parse it with this helper
+export function parseBoardState(game: Game): BoardState {
+  return JSON.parse(game.board_state) as BoardState
+}
+
+// ─────────────────────────────────────────────
+// REST response types
+// ─────────────────────────────────────────────
+
+export interface Game {
+  id: string
+  white_player_id: string
+  black_player_id: string
+  white_username?: string
+  black_username?: string
+  state: GameState
+  in_check: boolean
+  current_player: PlayerColor
+  move_count: number
+  board_state: string        // JSON string — use parseBoardState()
+  created_at: string
+  updated_at: string
+}
+
+export interface GameMove {
+  id: string
+  game_id: string
+  player_id: string
+  player_color: PlayerColor
+  move_notation: string      // e.g. "e2e4"
+  move_number: number
+  created_at: string
+}
+
+export interface ChatMessage {
+  id: string
+  game_id: string
+  sender_id: string
+  content: string
+  created_at: string
+}
+
+// ─────────────────────────────────────────────
+// Auth types
+// ─────────────────────────────────────────────
+
+export interface SignupRequest {
+  email: string
+  password: string
+  username: string
+}
+
+export interface SignupResponse {
+  created_at: string
+  email: string
+  password_changed_at: string
+  username: string
+}
+
+export interface SigninRequest {
+  email: string
+  password: string
+}
+
+export interface SigninResponse {
+  access_token: string
+  refresh_token: string
+  username: string
+  password_changed_at: string
+  last_login_at: string
+}
+
+export interface MeResponse {
+  created_at: string
+  email: string
+  email_confirmed: boolean
+  is_active: boolean
+  last_login_at: string
+  username: string
+}
+
+export interface CreateGameRequest {
+  opponent: 'person' | 'stockfish'
+  player_color: PlayerColor
+  initial_time_seconds?: number
+  increment_seconds?: number
+}
+
+export interface CheckUsernameResponse {
+  username: string
+  exists: boolean
+}
+
+// ─────────────────────────────────────────────
+// WebSocket envelope
+// ─────────────────────────────────────────────
+
+export interface WSEvent<T = unknown> {
+  type: string
+  payload?: T
+}
+
+// ─────────────────────────────────────────────
+// WebSocket — outbound (client → server)
+// ─────────────────────────────────────────────
+
+export type WSOutboundEvent =
+  | { type: 'auth';         payload: { token: string } }
+  | { type: 'make_move';    payload: { move: string } }
+  | { type: 'chat';         payload: { content: string } }
+  | { type: 'pong' }
+  | { type: 'voice_offer';  payload: RTCSessionDescriptionInit }
+  | { type: 'voice_answer'; payload: RTCSessionDescriptionInit }
+  | { type: 'voice_ice';    payload: RTCIceCandidateInit }
+  | { type: 'voice_end' }
+
+// ─────────────────────────────────────────────
+// WebSocket — inbound (server → client)
+// ─────────────────────────────────────────────
+
+// Sent immediately on connect — client must reply with auth
+export interface WSAuthRequired {
+  type: 'auth_required'
+}
+
+// Sent after successful auth and after reconnect
+// payload mirrors pieces.GameState serialized by board.SerializeGameState
+export interface WSGameStateEvent {
+  type: 'game_state'
+  payload: {
+    current_player: PlayerColor
+    board: Record<Square, PieceSymbol>
+    move_number: number
+    status: GameState
+    in_check: boolean
+    play_against: 'person' | 'stockfish'
+    user_color: PlayerColor
+    opponent_username?: string
+  }
+}
+
+// Broadcast to both players after every valid move
+export interface WSMoveEvent {
+  type: 'make_move'
+  payload: {
+    move: string               // e.g. "e2e4"
+    current_player: PlayerColor
+    in_check: boolean
+    is_checkmate: boolean
+    is_stalemate: boolean
+  }
+}
+
+// Broadcast to both players after a chat message is persisted
+export interface WSChatEvent {
+  type: 'chat'
+  payload: ChatMessage         // same shape as REST ChatMessage
+}
+
+// Broadcast when a player's WebSocket session drops
+export interface WSPlayerDisconnectedEvent {
+  type: 'player_disconnected'
+  payload: { username: string; color: PlayerColor }
+}
+
+export interface WSPlayerReconnectedEvent {
+  type: 'player_reconnected'
+  payload: { username: string; color: PlayerColor }
+}
+
+// Server keepalive — must reply immediately with { type: 'pong' }
+export interface WSPingEvent {
+  type: 'ping'
+}
+
+export interface WSErrorEvent {
+  type: 'error'
+  payload: { error: string }
+}
+
+// WebRTC signalling — relayed as-is from the other player
+export interface WSVoiceOfferEvent   { type: 'voice_offer';  payload: RTCSessionDescriptionInit }
+export interface WSVoiceAnswerEvent  { type: 'voice_answer'; payload: RTCSessionDescriptionInit }
+export interface WSVoiceICEEvent     { type: 'voice_ice';    payload: RTCIceCandidateInit }
+export interface WSVoiceEndEvent     { type: 'voice_end' }
+
+// Everything the client can receive — use this in your message handler switch
+export type WSInboundEvent =
+  | WSAuthRequired
+  | WSGameStateEvent
+  | WSMoveEvent
+  | WSChatEvent
+  | WSPlayerDisconnectedEvent
+  | WSPlayerReconnectedEvent
+  | WSPingEvent
+  | WSErrorEvent
+  | WSVoiceOfferEvent
+  | WSVoiceAnswerEvent
+  | WSVoiceICEEvent
+  | WSVoiceEndEvent
+
+// Type-safe send helper — use this instead of ws.send(JSON.stringify(...)) directly
+export function wsSend(ws: WebSocket, event: WSOutboundEvent): void {
+  ws.send(JSON.stringify(event))
+}
+
+// Type-safe message parser — use this in ws.onmessage
+export function wsParseInbound(raw: string): WSInboundEvent | null {
+  try {
+    return JSON.parse(raw) as WSInboundEvent
+  } catch {
+    return null
+  }
+}
+
+// ─────────────────────────────────────────────
+// WebSocket connection
+// ─────────────────────────────────────────────
+
+const WS_BASE_URL = import.meta.env.VITE_WS_URL ?? 'wss://api.chesske.com'
+
+export function createGameSocket(gameId: string): WebSocket {
+  return new WebSocket(`${WS_BASE_URL}/ws?game_id=${gameId}`)
+}
+
+// ─────────────────────────────────────────────
+// API
+// ─────────────────────────────────────────────
 
 export const api = {
   // Auth
-  signup: (data: SignupRequest) => request<SignupResponse>('POST', '/users/signup', data),
-  signin: (data: SigninRequest) => request<SigninResponse>('POST', '/users/signin', data),
-  checkUsername: (username: string) => request<unknown>('GET', `/users/check-username?username=${encodeURIComponent(username)}`),
-  confirmEmail: (data: { email: string; email_otp: string }) => request<{ email: string; message: string }>('POST', '/users/confirm-email', data),
-  resendOTP: (email: string) => request<{ email: string; msg: string }>('POST', '/users/send-emailotp', { email }),
-  me: () => request<MeResponse>('GET', '/users/me', undefined, true),
-  refreshToken: (refresh_token: string) => request<RefreshResponse>('POST', '/users/refresh-token', { refresh_token }),
+  signup:        (data: SignupRequest) =>
+                   request<SignupResponse>('POST', '/users/signup', data),
+  signin:        (data: SigninRequest) =>
+                   request<SigninResponse>('POST', '/users/signin', data),
+  checkUsername: (username: string) =>
+                   request<CheckUsernameResponse>('GET', `/users/check-username?username=${encodeURIComponent(username)}`),
+  confirmEmail:  (data: { email: string; email_otp: string }) =>
+                   request<{ email: string; message: string }>('POST', '/users/confirm-email', data),
+  resendOTP:     (email: string) =>
+                   request<{ email: string; msg: string }>('POST', '/users/send-emailotp', { email }),
+  me:            () =>
+                   request<MeResponse>('GET', '/users/me', undefined, true),
 
   // Games
-  listGames: () => request<unknown[]>('GET', '/games', undefined, true),
-  createGame: (data: { opponent: 'person' | 'stockfish'; player_color: 'w' | 'b'; initial_time_seconds?: number; increment_seconds?: number }) => request<unknown>('POST', '/games', data, true),
-  myGames: () => request<unknown[]>('GET', '/games/mine', undefined, true),
-  getGame: (id: string) => request<unknown>('GET', `/games/${id}`, undefined, true),
-  joinGame: (id: string) => request<unknown>('POST', `/games/${id}/join`, undefined, true),
-  getMoves: (id: string) => request<unknown[]>('GET', `/games/${id}/moves`, undefined, true),
-  resignGame: (id: string) => request<unknown>('POST', `/games/${id}/resign`, undefined, true),
-  deleteGame: (id: string) => request<unknown>('DELETE', `/games/${id}`, undefined, true),
+  listGames:     () =>
+                   request<Game[]>('GET', '/games', undefined, true),
+  createGame:    (data: CreateGameRequest) =>
+                   request<Game>('POST', '/games', data, true),
+  myGames:       () =>
+                   request<Game[]>('GET', '/games/mine', undefined, true),
+  getGame:       (id: string) =>
+                   request<Game>('GET', `/games/${id}`, undefined, true),
+  joinGame:      (id: string) =>
+                   request<Game>('POST', `/games/${id}/join`, undefined, true),
+  getMoves:      (id: string) =>
+                   request<GameMove[]>('GET', `/games/${id}/moves`, undefined, true),
+  resignGame:    (id: string) =>
+                   request<Game>('POST', `/games/${id}/resign`, undefined, true),
+  deleteGame:    (id: string) =>
+                   request<{ message: string }>('DELETE', `/games/${id}`, undefined, true),
 
-  // Chat
-  getChat: (gameId: string) => request<unknown[]>('GET', `/games/${gameId}/chat`, undefined, true),
-  sendChat: (gameId: string, content: string) => request<unknown>('POST', `/games/${gameId}/chat`, { content }, true),
+  // Chat (REST — for loading history; live chat goes over WebSocket)
+  getChat:       (gameId: string) =>
+                   request<ChatMessage[]>('GET', `/games/${gameId}/chat`, undefined, true),
 
-  // TURN credentials — fetch fresh before each call
-  turnCredentials: () => request<{ iceServers: RTCIceServer[] }>('GET', '/turn-credentials', undefined, true),
-
-  // Voice
-  getVoice: (gameId: string) => request<unknown>('GET', `/games/${gameId}/voice`, undefined, true),
-  startVoice: (gameId: string) => request<unknown>('POST', `/games/${gameId}/voice`, undefined, true),
-  endVoice: (gameId: string, vid: string) => request<unknown>('DELETE', `/games/${gameId}/voice/${vid}`, undefined, true),
-  acceptVoice: (gameId: string, vid: string) => request<unknown>('PATCH', `/games/${gameId}/voice/${vid}/activate`, undefined, true),
+  // TURN credentials for WebRTC
+  turnCredentials: () =>
+                   request<{ iceServers: RTCIceServer[] }>('GET', '/turn-credentials', undefined, true),
 }

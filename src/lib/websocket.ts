@@ -1,21 +1,19 @@
-const WS_BASE = 'wss://api.chesske.com/ws'
+import {
+  createGameSocket,
+  wsSend,
+  wsParseInbound,
+  type WSInboundEvent,
+} from './api'
 
-type MessageHandler = (type: string, payload: unknown) => void
-
-interface QueuedMessage {
-  type: string
-  payload: unknown
-}
+type EventHandler = (event: WSInboundEvent) => void
 
 export class GameSocket {
   private ws: WebSocket | null = null
   private gameId: string
   private token: string
-  private handlers = new Map<string, Set<MessageHandler>>()
-  private queue: QueuedMessage[] = []
+  private handlers = new Set<EventHandler>()
+  private pingTimer: ReturnType<typeof setInterval> | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  private pingTimer: ReturnType<typeof setTimeout> | null = null
-  private authenticated = false
   private destroyed = false
 
   constructor(gameId: string, token: string) {
@@ -26,23 +24,36 @@ export class GameSocket {
 
   private connect() {
     if (this.destroyed) return
-    this.ws = new WebSocket(`${WS_BASE}?game_id=${this.gameId}`)
+    this.ws = createGameSocket(this.gameId)
 
     this.ws.onopen = () => {
-      // Wait for auth_required from server before sending auth
+      // Server will send auth_required first
     }
 
-    this.ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data)
-        this.handleMessage(msg)
-      } catch {
-        // ignore malformed messages
+    this.ws.onmessage = (msg) => {
+      const event = wsParseInbound(msg.data as string)
+      if (!event) return
+
+      switch (event.type) {
+        case 'auth_required':
+          wsSend(this.ws!, { type: 'auth', payload: { token: this.token } })
+          break
+
+        case 'game_state':
+          this.startPing()
+          this.emit(event)
+          break
+
+        case 'ping':
+          wsSend(this.ws!, { type: 'pong' })
+          break
+
+        default:
+          this.emit(event)
       }
     }
 
     this.ws.onclose = () => {
-      this.authenticated = false
       this.stopPing()
       if (!this.destroyed) {
         this.reconnectTimer = setTimeout(() => this.connect(), 3000)
@@ -50,90 +61,51 @@ export class GameSocket {
     }
 
     this.ws.onerror = () => {
-      // onclose will fire after this, triggering reconnect
+      // onclose fires afterward, triggering reconnect
     }
   }
 
-  private handleMessage(msg: { type: string; payload?: unknown }) {
-    const { type, payload } = msg
+  on(handler: EventHandler): () => void {
+    this.handlers.add(handler)
+    return () => { this.handlers.delete(handler) }
+  }
 
+  private emit(event: WSInboundEvent) {
+    this.handlers.forEach(h => h(event))
+  }
+
+  send(type: string, payload?: unknown) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
     switch (type) {
-      case 'auth_required':
-        this.sendRaw({ type: 'auth', payload: { token: this.token } })
-        break
-
-      case 'game_state':
-        this.authenticated = true
-        this.flushQueue()
-        this.startPing()
-        this.emit(type, payload)
-        break
-
-      case 'ping':
-        this.sendRaw({ type: 'pong', payload: {} })
-        break
-
       case 'make_move':
-      case 'chat':
-      case 'error':
-      case 'player_disconnected':
-      case 'player_reconnected':
-      case 'voice_offer':
-      case 'voice_answer':
-      case 'voice_ice':
-      case 'voice_end':
-        this.emit(type, payload)
+        wsSend(this.ws, { type: 'make_move', payload: payload as { move: string } })
         break
-
-      default:
-        // forward unknown events too
-        this.emit(type, payload)
+      case 'chat':
+        wsSend(this.ws, { type: 'chat', payload: payload as { content: string } })
+        break
+      case 'voice_offer':
+        wsSend(this.ws, { type: 'voice_offer', payload: payload as RTCSessionDescriptionInit })
+        break
+      case 'voice_answer':
+        wsSend(this.ws, { type: 'voice_answer', payload: payload as RTCSessionDescriptionInit })
+        break
+      case 'voice_ice':
+        wsSend(this.ws, { type: 'voice_ice', payload: payload as RTCIceCandidateInit })
+        break
+      case 'voice_end':
+        wsSend(this.ws, { type: 'voice_end' })
+        break
     }
-  }
-
-  private sendRaw(msg: QueuedMessage) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg))
-    }
-  }
-
-  send(type: string, payload: unknown = {}) {
-    const msg = { type, payload }
-    if (this.authenticated && this.ws?.readyState === WebSocket.OPEN) {
-      this.sendRaw(msg)
-    } else {
-      this.queue.push(msg)
-    }
-  }
-
-  private flushQueue() {
-    const pending = this.queue.splice(0)
-    pending.forEach(m => this.sendRaw(m))
   }
 
   private startPing() {
     this.stopPing()
-    this.pingTimer = setInterval(() => {
-      // Server sends ping, we reply pong — no action needed here
-    }, 30_000)
+    // Server sends ping every 30s — we reply in onmessage.
+    // No action needed on client timer; the server drives pings.
   }
 
   private stopPing() {
     if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null }
-  }
-
-  on(type: string, handler: MessageHandler) {
-    if (!this.handlers.has(type)) this.handlers.set(type, new Set())
-    this.handlers.get(type)!.add(handler)
-    return () => { this.handlers.get(type)?.delete(handler) }
-  }
-
-  private emit(type: string, payload: unknown) {
-    this.handlers.get(type)?.forEach(h => h(type, payload))
-  }
-
-  isConnected() {
-    return this.authenticated && this.ws?.readyState === WebSocket.OPEN
   }
 
   destroy() {
@@ -143,6 +115,5 @@ export class GameSocket {
     this.ws?.close()
     this.ws = null
     this.handlers.clear()
-    this.queue = []
   }
 }

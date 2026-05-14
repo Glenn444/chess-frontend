@@ -235,11 +235,10 @@ export function Register() {
     setUsernameStatus('checking')
     const timer = setTimeout(async () => {
       try {
-        await api.checkUsername(username)
-        // API returns empty object or success = available; error 409 = taken
-        setUsernameStatus('available')
+        const result = await api.checkUsername(username)
+        setUsernameStatus(result.exists ? 'taken' : 'available')
       } catch {
-        setUsernameStatus('taken')
+        setUsernameStatus('idle')
       }
     }, 400)
     return () => clearTimeout(timer)

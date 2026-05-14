@@ -4,6 +4,17 @@ const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 
 const INITIAL_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
+export function boardToPosition(board: Record<string, string>): Position {
+  const pos: Position = {}
+  for (const [sq, piece] of Object.entries(board)) {
+    pos[sq] = {
+      t: piece.toUpperCase(),
+      c: piece === piece.toUpperCase() ? 'l' : 'd',
+    }
+  }
+  return pos
+}
+
 export function fenToPosition(fen?: string): Position {
   const position: Position = {}
   const board = (fen || INITIAL_FEN).split(' ')[0]

@@ -1,9 +1,21 @@
 import { create } from 'zustand'
 import { GameSocket } from './websocket'
+import { type WSInboundEvent, type ChatMessage } from './api'
+import { boardToPosition, applyMove } from './chess'
 import type { Position } from '../components/Board'
-import { fenToPosition, applyMove } from './chess'
 
-export interface GameMove {
+export interface LiveGameState {
+  current_player: 'w' | 'b'
+  board: Record<string, string>
+  move_number: number
+  status: string
+  in_check: boolean
+  play_against: 'person' | 'stockfish'
+  user_color: 'w' | 'b'
+  opponent_username?: string
+}
+
+export interface LiveMove {
   move: string
   current_player: 'w' | 'b'
   in_check: boolean
@@ -11,31 +23,11 @@ export interface GameMove {
   is_stalemate: boolean
 }
 
-export interface ChatMessage {
-  username: string
-  content: string
-  sent_at: string
-}
-
-export interface GameState {
-  id: string
-  status: string
-  player_color: 'w' | 'b'
-  white_player: string
-  black_player: string
-  current_player: 'w' | 'b'
-  fen: string
-  in_check: boolean
-  is_checkmate: boolean
-  is_stalemate: boolean
-  created_at: string
-}
-
 interface LiveGameStore {
   socket: GameSocket | null
-  gameState: GameState | null
+  gameState: LiveGameState | null
   position: Position | null
-  moves: GameMove[]
+  moves: LiveMove[]
   chatMessages: ChatMessage[]
   error: string | null
   opponentDisconnected: boolean
@@ -57,56 +49,59 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
   opponentDisconnected: false,
 
   connect: (gameId, token) => {
-    // Clean up existing connection
     get().socket?.destroy()
 
     const socket = new GameSocket(gameId, token)
 
-    socket.on('game_state', (_, payload) => {
-      const state = payload as GameState
-      const position = fenToPosition(state.fen || '')
-      set({ gameState: state, position, error: null })
-    })
-
-    socket.on('make_move', (_, payload) => {
-      const move = payload as GameMove
-      set(s => {
-        const newMoves = [...s.moves, move]
-        const state = s.gameState
-        const newPosition = s.position ? applyMove(s.position, move.move) : null
-        if (state) {
-          return {
-            moves: newMoves,
-            position: newPosition,
-            gameState: {
-              ...state,
-              current_player: move.current_player,
-              in_check: move.in_check,
-              is_checkmate: move.is_checkmate,
-              is_stalemate: move.is_stalemate,
-            },
-          }
+    socket.on((event: WSInboundEvent) => {
+      switch (event.type) {
+        case 'game_state': {
+          const gs = event.payload
+          const pos = boardToPosition(gs.board)
+          set({
+            gameState: gs,
+            position: pos,
+            error: null,
+          })
+          break
         }
-        return { moves: newMoves, position: newPosition }
-      })
-    })
 
-    socket.on('chat', (_, payload) => {
-      const msg = payload as ChatMessage
-      set(s => ({ chatMessages: [...s.chatMessages, msg] }))
-    })
+        case 'make_move': {
+          const mv = event.payload
+          set(s => ({
+            moves: [...s.moves, mv],
+            position: s.position ? applyMove(s.position, mv.move) : null,
+            gameState: s.gameState ? {
+              ...s.gameState,
+              current_player: mv.current_player,
+              in_check: mv.in_check,
+              status: mv.is_checkmate ? 'checkmate' : mv.is_stalemate ? 'stalemate' : s.gameState.status,
+            } : null,
+          }))
+          break
+        }
 
-    socket.on('error', (_, payload) => {
-      const err = payload as { error: string }
-      set({ error: err.error })
-    })
+        case 'chat': {
+          const msg = event.payload
+          set(s => ({ chatMessages: [...s.chatMessages, msg] }))
+          break
+        }
 
-    socket.on('player_disconnected', () => {
-      set({ opponentDisconnected: true })
-    })
+        case 'error': {
+          set({ error: event.payload.error })
+          break
+        }
 
-    socket.on('player_reconnected', () => {
-      set({ opponentDisconnected: false })
+        case 'player_disconnected': {
+          set({ opponentDisconnected: true })
+          break
+        }
+
+        case 'player_reconnected': {
+          set({ opponentDisconnected: false })
+          break
+        }
+      }
     })
 
     set({ socket, position: null, moves: [], chatMessages: [], error: null, opponentDisconnected: false })
