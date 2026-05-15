@@ -283,7 +283,12 @@ export default function GameScreen() {
 
   const isGameOver = ['checkmate', 'stalemate', 'resign', 'draw'].includes(restGame?.state ?? '')
   const gameActive = restGame?.state === 'active' && !isGameOver
-  const initialSeconds = 600
+
+  // Timer values from server (milliseconds → seconds). Fall back to 600 if not yet loaded.
+  const whiteInitialSeconds = restGame ? Math.floor(restGame.white_time_remaining_ms / 1000) : 600
+  const blackInitialSeconds = restGame ? Math.floor(restGame.black_time_remaining_ms / 1000) : 600
+  const myInitialSeconds      = userColor === 'b' ? blackInitialSeconds : whiteInitialSeconds
+  const opponentInitialSeconds = userColor === 'b' ? whiteInitialSeconds : blackInitialSeconds
 
   const lastMoveSquares = liveMoves.length > 0
     ? [liveMoves[liveMoves.length - 1].move.slice(0, 2), liveMoves[liveMoves.length - 1].move.slice(2, 4)]
@@ -345,7 +350,7 @@ export default function GameScreen() {
           <CompactPlayerStrip
             player={{ name: opponentName, rating: '1200', avatarColor: 'rose', online: !opponentDisconnected }}
             isTurn={!isMyTurn}
-            initialSeconds={initialSeconds}
+            initialSeconds={opponentInitialSeconds}
             gameActive={gameActive}
           />
 
@@ -393,7 +398,7 @@ export default function GameScreen() {
           <CompactPlayerStrip
             player={{ name: currentUser?.username || 'You', rating: '1200', avatarColor: 'amber', online: true }}
             isTurn={isMyTurn}
-            initialSeconds={initialSeconds}
+            initialSeconds={myInitialSeconds}
             gameActive={gameActive}
           />
 
@@ -510,7 +515,7 @@ export default function GameScreen() {
             <PlayerCard
               player={{ name: opponentName, rating: '1200', color: opponentColor, online: !opponentDisconnected, avatarColor: 'rose' }}
               isTurn={!isMyTurn}
-              initialSeconds={initialSeconds}
+              initialSeconds={opponentInitialSeconds}
               gameActive={gameActive}
             />
           </div>
@@ -556,7 +561,7 @@ export default function GameScreen() {
             <PlayerCard
               player={{ name: currentUser?.username || 'You', rating: '1200', color: myColor, online: true, avatarColor: 'amber' }}
               isTurn={isMyTurn}
-              initialSeconds={initialSeconds}
+              initialSeconds={myInitialSeconds}
               gameActive={gameActive}
             />
           </div>

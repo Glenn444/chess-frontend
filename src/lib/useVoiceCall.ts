@@ -111,6 +111,40 @@ export function useVoiceCall(socket: GameSocket | null) {
 
     pc.onconnectionstatechange = () => {
       console.log('[Voice] connection state:', pc.connectionState)
+
+      if (pc.connectionState === 'connected') {
+        void (async () => {
+          try {
+            const stats = await pc.getStats()
+            // Build id → candidateType map from individual candidate reports
+            const candidateTypes = new Map<string, string>()
+            stats.forEach(r => {
+              if (r.type === 'local-candidate' || r.type === 'remote-candidate') {
+                candidateTypes.set(r.id, r.candidateType ?? 'unknown')
+              }
+            })
+            stats.forEach(r => {
+              if (r.type === 'candidate-pair' && r.state === 'succeeded') {
+                const localType = candidateTypes.get(r.localCandidateId) ?? r.localCandidateId
+                const remoteType = candidateTypes.get(r.remoteCandidateId) ?? r.remoteCandidateId
+                const relayProtocol = r.relayProtocol ?? null
+                console.log('[Voice] stats — local:', localType, 'remote:', remoteType, 'relay:', relayProtocol)
+                socket?.send('voice_stats', {
+                  localType,
+                  remoteType,
+                  relayProtocol,
+                  selectedPair: r.id,
+                  localCandidate: r.localCandidateId,
+                  remoteCandidate: r.remoteCandidateId,
+                })
+              }
+            })
+          } catch (e) {
+            console.warn('[Voice] getStats failed:', e)
+          }
+        })()
+      }
+
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
         console.warn('[Voice] connection dropped — hanging up')
         hangup()

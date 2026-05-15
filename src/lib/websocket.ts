@@ -108,6 +108,9 @@ export class GameSocket {
       case 'voice_end':
         wsSend(this.ws, { type: 'voice_end' })
         break
+      case 'voice_stats':
+        wsSend(this.ws, { type: 'voice_stats', payload: payload as { localType: string; remoteType: string; relayProtocol: string | null; selectedPair: string; localCandidate: string; remoteCandidate: string } })
+        break
     }
   }
 

@@ -141,6 +141,8 @@ export interface Game {
   current_player: PlayerColor
   move_count: number
   board_state: string        // JSON string — use parseBoardState()
+  white_time_remaining_ms: number
+  black_time_remaining_ms: number
   created_at: string
   updated_at: string
 }
@@ -205,8 +207,7 @@ export interface MeResponse {
 export interface CreateGameRequest {
   opponent: 'person' | 'stockfish'
   player_color: PlayerColor
-  initial_time_seconds?: number
-  increment_seconds?: number
+  time_control: 5 | 10 | 15 | 30 | 45 | 60   // minutes — server accepts only these values
 }
 
 export interface CheckUsernameResponse {
@@ -236,6 +237,7 @@ export type WSOutboundEvent =
   | { type: 'voice_answer'; payload: RTCSessionDescriptionInit }
   | { type: 'voice_ice';    payload: RTCIceCandidateInit }
   | { type: 'voice_end' }
+  | { type: 'voice_stats';  payload: { localType: string; remoteType: string; relayProtocol: string | null; selectedPair: string; localCandidate: string; remoteCandidate: string } }
 
 // ─────────────────────────────────────────────
 // WebSocket — inbound (server → client)
@@ -406,5 +408,5 @@ export const api = {
 
   // Logout — invalidates the session cookie on the server
   logout: () =>
-          request<void>('POST', '/logout', undefined, true),
+          request<void>('POST', '/users/logout', undefined, true),
 }

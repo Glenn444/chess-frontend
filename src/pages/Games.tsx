@@ -15,15 +15,15 @@ export default function Games() {
   const isMobile = useIsMobile()
   const user = useAuth(s => s.user)
   const [color, setColor] = useState<'w' | 'b'>('w')
-  const [timeControl, setTimeControl] = useState(600)
+  const [timeControl, setTimeControl] = useState<5 | 10 | 15 | 30 | 45 | 60>(10)
 
-  const timePresets = [
-    { label: '1 min', seconds: 60 },
-    { label: '3 min', seconds: 180 },
-    { label: '5 min', seconds: 300 },
-    { label: '10 min', seconds: 600 },
-    { label: '15|10', seconds: 900, increment: 10 },
-    { label: '30 min', seconds: 1800 },
+  const timePresets: { label: string; minutes: 5 | 10 | 15 | 30 | 45 | 60 }[] = [
+    { label: '5 min',  minutes: 5  },
+    { label: '10 min', minutes: 10 },
+    { label: '15 min', minutes: 15 },
+    { label: '30 min', minutes: 30 },
+    { label: '45 min', minutes: 45 },
+    { label: '60 min', minutes: 60 },
   ]
 
   const { data: myGames = [], isLoading: loadingMine } = useMyGames()
@@ -37,22 +37,20 @@ export default function Games() {
 
   const openNav = useMobileNav(s => s.openNav)
   const displayName = user?.username || 'Player'
-  const pendingGames = myGames.filter((g: any) => g.state === 'waiting')
-  const hasPendingGame = pendingGames.length > 0
+  const pendingGames = myGames.filter((g: any) => g.state === 'waiting' || g.state === 'active')
+  const hasPendingGame = pendingGames.length >= 3
   const myGameIds = new Set(myGames.map((g: any) => g.id))
 
   const handleCreateGame = async () => {
     if (hasPendingGame) {
-      addToast('You already have a pending game. Cancel it before creating a new one.', 'info')
+      addToast('You can have at most 3 active games. Finish or delete one first.', 'info')
       return
     }
     try {
-      const preset = timePresets.find(t => t.seconds === timeControl)
       const game = await createGame.mutateAsync({
         opponent: 'person',
         player_color: color,
-        initial_time_seconds: timeControl,
-        increment_seconds: preset?.increment || 0,
+        time_control: timeControl,
       })
       const g = game as { id: string }
       navigate(`/game/${g.id}`)
@@ -167,7 +165,7 @@ export default function Games() {
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
               <Icon name="zap" size={14} />
-              You have a pending game waiting for an opponent. Complete or cancel it before creating a new one.
+              You have reached the limit of 3 active games. Finish or delete one before creating a new one.
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -194,10 +192,10 @@ export default function Games() {
             {/* Time control */}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {timePresets.map(t => (
-                <button key={t.seconds} onClick={() => setTimeControl(t.seconds)} disabled={hasPendingGame} style={{
+                <button key={t.minutes} onClick={() => setTimeControl(t.minutes)} disabled={hasPendingGame} style={{
                   padding: '8px 14px', borderRadius: 10, cursor: hasPendingGame ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500,
-                  border: timeControl === t.seconds ? '1.5px solid var(--color-amber)' : '1px solid var(--color-border-strong)',
-                  background: timeControl === t.seconds ? 'rgba(229,169,59,0.08)' : 'var(--color-bg-elev)',
+                  border: timeControl === t.minutes ? '1.5px solid var(--color-amber)' : '1px solid var(--color-border-strong)',
+                  background: timeControl === t.minutes ? 'rgba(229,169,59,0.08)' : 'var(--color-bg-elev)',
                   color: 'var(--color-text-primary)',
                   opacity: hasPendingGame ? 0.5 : 1,
                 }}>
