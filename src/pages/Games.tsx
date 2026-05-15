@@ -8,7 +8,7 @@ import { useIsMobile } from '../lib/useIsMobile'
 import { useAuth } from '../lib/authStore'
 import { useMyGames, useWaitingGames, useCreateGame, useJoinGame, useDeleteGame } from '../lib/queries'
 import { useToasts } from '../lib/toastStore'
-import logoPng from '../assets/chesske-logo.png'
+import { useMobileNav } from '../lib/mobileNavStore'
 
 export default function Games() {
   const navigate = useNavigate()
@@ -35,6 +35,7 @@ export default function Games() {
 
   const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
 
+  const openNav = useMobileNav(s => s.openNav)
   const displayName = user?.username || 'Player'
   const pendingGames = myGames.filter((g: any) => g.state === 'waiting')
   const hasPendingGame = pendingGames.length > 0
@@ -108,34 +109,49 @@ export default function Games() {
     <div className="fade-in" style={{ display: 'flex', minHeight: '100vh' }}>
       {!isMobile && <Sidebar />}
       <main style={{ flex: 1, padding: pad, overflow: 'auto', paddingBottom: isMobile ? 100 : pad }}>
-        {/* Mobile header — brand + user avatar */}
-        {isMobile && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <img src={logoPng} alt="Chesske" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-              <span className="font-display" style={{ fontSize: 20, fontWeight: 600 }}>Chesske</span>
-            </div>
-            {/* User avatar — no navigation, just display */}
+        {/* Mobile header — avatar + title + hamburger */}
+        {isMobile ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
             <div style={{
-              width: 36, height: 36, borderRadius: '50%',
+              width: 50, height: 50, borderRadius: 14, flexShrink: 0,
               background: 'linear-gradient(135deg, var(--color-amber-light), var(--color-amber-deep))',
               display: 'grid', placeItems: 'center',
-              color: '#1A1408', fontWeight: 700, fontSize: 15,
-              border: '2px solid var(--color-border-strong)',
+              color: '#1A1408', fontWeight: 700, fontSize: 20,
+              border: '2px solid rgba(229,169,59,0.4)',
             }}>
               {displayName.charAt(0).toUpperCase()}
             </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h1 className="font-display" style={{ fontSize: 22, margin: 0, fontWeight: 500, letterSpacing: -0.3 }}>
+                Play Chess
+              </h1>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: 12, margin: '2px 0 0' }}>
+                Join a game or create your own.
+              </p>
+            </div>
+            <button
+              onClick={openNav}
+              style={{
+                width: 46, height: 46, borderRadius: 13, flexShrink: 0,
+                border: '1px solid var(--color-border-strong)',
+                background: 'var(--color-bg-raised)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', padding: 0,
+              }}
+            >
+              <Icon name="menu" size={20} color="var(--color-text-primary)" />
+            </button>
+          </div>
+        ) : (
+          <div style={{ marginBottom: 28 }}>
+            <h1 className="font-display" style={{ fontSize: 36, margin: '0 0 4px', fontWeight: 500, letterSpacing: -0.5 }}>
+              Play Chess
+            </h1>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: 14 }}>
+              Join a waiting game or create your own.
+            </p>
           </div>
         )}
-
-        <div style={{ marginBottom: isMobile ? 20 : 28 }}>
-          <h1 className="font-display" style={{ fontSize: isMobile ? 24 : 36, margin: '0 0 4px', fontWeight: 500, letterSpacing: -0.5 }}>
-            Play Chess
-          </h1>
-          <p style={{ color: 'var(--color-text-secondary)', fontSize: isMobile ? 13 : 14 }}>
-            Join a waiting game or create your own.
-          </p>
-        </div>
 
         {/* Create Game */}
         <div style={{

@@ -5,9 +5,10 @@ import { PieceThemeProvider } from './lib/PieceThemeContext'
 import { useAuth } from './lib/authStore'
 import { useMe } from './lib/queries'
 import FloatingNav from './components/FloatingNav'
+import MobileNav from './components/MobileNav'
 import ToastContainer from './components/Toast'
 import Landing from './pages/Landing'
-import { Login, Register } from './pages/Auth'
+import { Login, Register, ForgotPassword, ResetPassword } from './pages/Auth'
 import Dashboard from './pages/Dashboard'
 import Matchmaking from './pages/Matchmaking'
 import GameScreen from './pages/GameScreen'
@@ -66,6 +67,8 @@ export default function App() {
         <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
         <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
         <Route path="/matchmaking" element={<ProtectedRoute><Matchmaking /></ProtectedRoute>} />
@@ -74,6 +77,7 @@ export default function App() {
       </Routes>
       <ToastContainer />
       {!user && <FloatingNav />}
+      {user && <MobileNav />}
     </PieceThemeProvider>
   )
 }

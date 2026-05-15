@@ -2,7 +2,7 @@ export type IconName =
   | 'logo' | 'mic' | 'mic-off' | 'phone-off' | 'send' | 'chat'
   | 'flag' | 'handshake' | 'clock' | 'trophy' | 'search' | 'plus'
   | 'arrow-right' | 'arrow-left' | 'settings' | 'user' | 'bell'
-  | 'check' | 'x' | 'globe' | 'zap' | 'puzzle' | 'bolt'
+  | 'check' | 'x' | 'globe' | 'zap' | 'puzzle' | 'bolt' | 'menu' | 'log-out'
 
 const iconPaths: Record<IconName, { viewBox: string; d: string[]; fill?: string; stroke?: string }> = {
   logo: {
@@ -38,6 +38,8 @@ const iconPaths: Record<IconName, { viewBox: string; d: string[]; fill?: string;
   zap: { viewBox: '0 0 24 24', d: ['M13 2 L4 14 L12 14 L11 22 L20 10 L12 10 Z'] },
   puzzle: { viewBox: '0 0 24 24', d: ['M9 3h2a2 2 0 0 1 0 4h3v3a2 2 0 0 0 4 0v3h-3a2 2 0 0 0 0 4h3v3H9v-3a2 2 0 0 1-4 0H3v-7h2a2 2 0 0 0 0-4H3V3z'] },
   bolt: { viewBox: '0 0 24 24', d: ['M13 2 L4 14 L12 14 L11 22 L20 10 L12 10 Z'] },
+  menu: { viewBox: '0 0 24 24', d: ['M3 6h18M3 12h18M3 18h18'] },
+  'log-out': { viewBox: '0 0 24 24', d: ['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4', 'M16 17l5-5-5-5', 'M21 12H9'] },
 }
 
 interface IconProps {

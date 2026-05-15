@@ -21,6 +21,8 @@ import { useVoiceCall } from '../lib/useVoiceCall'
 import { api, type Game, parseBoardState, fetchFreshToken } from '../lib/api'
 import { useToasts } from '../lib/toastStore'
 import { getHints, INITIAL_POSITION } from '../lib/chess'
+import { useGameChat, useGetMoves } from '../lib/queries'
+import { useMobileNav } from '../lib/mobileNavStore'
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
 
@@ -56,7 +58,12 @@ export default function GameScreen() {
   // manualFlip: null means "use auto orientation", true/false means user manually toggled
   const [manualFlip, setManualFlip] = useState<boolean | null>(null)
   const isMobile = useIsMobile()
+  const openNav = useMobileNav(s => s.openNav)
   const [sheet, setSheet] = useState<'chat' | 'moves' | 'actions' | 'theme' | null>(null)
+
+  // ── REST: chat + move history — loaded once, live updates come via WS ──
+  const { data: chatHistory } = useGameChat(gameId)
+  const { data: restMoves } = useGetMoves(gameId)
 
   // ── REST: fetch game, poll only while waiting for opponent ──
   const { data: restGame, isLoading } = useQuery({
@@ -144,9 +151,19 @@ export default function GameScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, wsToken, restGame?.state])
 
-  // White player auto-initiates voice once game_state arrives; black auto-answers via useVoiceCall
+  // White player auto-initiates voice once game_state arrives; black auto-answers via useVoiceCall.
+  // Track the socket instance so we can detect reconnects and restart voice after WS recovers.
   const voiceInitiated = useRef(false)
+  const lastVoiceSocket = useRef<typeof socket>(null)
   useEffect(() => {
+    if (socket !== lastVoiceSocket.current) {
+      lastVoiceSocket.current = socket
+      if (socket && voiceInitiated.current) {
+        // Socket reconnected — old PC is dead. Reset so we retry below.
+        console.log('[GameScreen] socket reconnected — resetting voice for retry')
+        voiceInitiated.current = false
+      }
+    }
     if (!gameState || !socket || voiceInitiated.current) return
     if (userColor === 'w') {
       voiceInitiated.current = true
@@ -161,14 +178,18 @@ export default function GameScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Responsive board size
+  // Responsive board size — capped by both viewport width and height so the board fits without scrolling.
+  // Available height for the board = vh - 48px (main padding) - 240px (player cards + status + gaps).
   useEffect(() => {
     const onResize = () => {
       const w = window.innerWidth
-      if (w < 480) setBoardSize(Math.min(w - 24, 360))
-      else if (w < 860) setBoardSize(Math.min(w - 32, 480))
-      else if (w < 1100) setBoardSize(Math.min(w - 80, 540))
-      else setBoardSize(Math.min(620, w * 0.42))
+      const maxFromHeight = Math.max(280, window.innerHeight - (isMobile ? 340 : 288))
+      let sizeFromWidth: number
+      if (w < 480) sizeFromWidth = Math.min(w - 24, 360)
+      else if (w < 860) sizeFromWidth = Math.min(w - 32, 480)
+      else if (w < 1100) sizeFromWidth = Math.min(w - 80, 540)
+      else sizeFromWidth = Math.min(620, w * 0.42)
+      setBoardSize(Math.min(sizeFromWidth, maxFromHeight))
     }
     onResize()
     window.addEventListener('resize', onResize)
@@ -210,13 +231,34 @@ export default function GameScreen() {
     selected ? getHints(displayPosition, selected) : [],
   [selected, displayPosition])
 
-  const chatForUI = useMemo(() =>
-    chatMessages.map(m => ({
-      me: m.sender_id === (currentUser?.username || ''),
+  // sender_id is a UUID — compare against the player IDs from the REST game object
+  const myPlayerId = userColor === 'w' ? restGame?.white_player_id : restGame?.black_player_id
+
+  const chatForUI = useMemo(() => {
+    // Merge REST history + live WS messages, dedupe by message ID
+    const seen = new Set<string>()
+    const all = [...(chatHistory ?? []), ...chatMessages].filter(m => {
+      if (seen.has(m.id)) return false
+      seen.add(m.id)
+      return true
+    })
+    all.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    return all.map(m => ({
+      id: m.id,
+      me: !!myPlayerId && m.sender_id === myPlayerId,
       text: m.content,
       time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    })),
-  [chatMessages, currentUser])
+      senderName: m.sender_id === restGame?.white_player_id
+        ? (restGame.white_player_name ?? 'White')
+        : (restGame?.black_player_name ?? 'Black'),
+    }))
+  }, [chatHistory, chatMessages, myPlayerId, restGame])
+
+  // REST move history (base) + any WS moves that happened after (new moves during this session)
+  const allMovesForHistory = useMemo(() => {
+    const base = (restMoves ?? []).map(m => ({ move: m.move_notation, current_player: m.player_color }))
+    return [...base, ...liveMoves.slice(base.length)]
+  }, [restMoves, liveMoves])
 
   // Opponent name: WS first, REST fallback using correct field names
   const opponentName = useMemo(() => {
@@ -268,6 +310,32 @@ export default function GameScreen() {
     return (
       <div className="fade-in" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-base)' }}>
         <audio ref={voice.remoteAudioRef} autoPlay />
+
+        {/* Mobile top bar: avatar + hamburger */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px 0' }}>
+          <div style={{
+            width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+            background: 'linear-gradient(135deg, var(--color-amber-light), var(--color-amber-deep))',
+            display: 'grid', placeItems: 'center',
+            color: '#1A1408', fontWeight: 700, fontSize: 17,
+            border: '2px solid rgba(229,169,59,0.4)',
+          }}>
+            {(currentUser?.username || 'P').charAt(0).toUpperCase()}
+          </div>
+          <button
+            onClick={openNav}
+            style={{
+              width: 42, height: 42, borderRadius: 12,
+              border: '1px solid var(--color-border-strong)',
+              background: 'var(--color-bg-raised)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0,
+            }}
+          >
+            <Icon name="menu" size={20} color="var(--color-text-primary)" />
+          </button>
+        </div>
+
         {voice.micDenied && (
           <div style={{ margin: '8px 12px 0', padding: '10px 14px', background: 'rgba(210,106,106,0.12)', border: '1px solid rgba(210,106,106,0.3)', borderRadius: 12, fontSize: 13, color: 'var(--color-red)', textAlign: 'center' }}>
             Microphone access is required to play. Please enable your microphone in browser settings.
@@ -379,11 +447,13 @@ export default function GameScreen() {
         </div>
 
         <BottomSheet open={sheet === 'chat'} onClose={() => setSheet(null)} title="Chat">
-          <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} />
+          <div style={{ height: 360, display: 'flex', flexDirection: 'column' }}>
+            <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} />
+          </div>
         </BottomSheet>
         <BottomSheet open={sheet === 'moves'} onClose={() => setSheet(null)} title="Move History">
           <div style={{ maxHeight: 340, overflow: 'auto' }}>
-            <MoveHistory moves={liveMoves} />
+            <MoveHistory moves={allMovesForHistory} />
           </div>
         </BottomSheet>
         <BottomSheet open={sheet === 'actions'} onClose={() => setSheet(null)} title="Actions">
@@ -408,19 +478,19 @@ export default function GameScreen() {
 
   /* ──── Desktop layout ──── */
   return (
-    <div className="fade-in" style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="fade-in" style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <audio ref={voice.remoteAudioRef} autoPlay />
       <Sidebar />
-      <main className="game-main" style={{ flex: 1, padding: 24, display: 'grid', gridTemplateColumns: '300px 1fr 320px', gap: 16, minHeight: '100vh' }}>
+      <main className="game-main" style={{ flex: 1, padding: 24, display: 'grid', gridTemplateColumns: '300px 1fr 320px', gap: 16, alignItems: 'start', height: '100vh', overflow: 'hidden', boxSizing: 'border-box' }}>
         {/* LEFT — voice + chat */}
-        <div className="game-left" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+        <div className="game-left" style={{ display: 'flex', flexDirection: 'column', gap: 12, height: boardSize + 238 }}>
           <VoiceBar
             muted={voice.muted}
             status={voice.status}
             onToggleMute={voice.toggleMute}
           />
-          <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
-            <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, display: 'flex', flexDirection: 'column', height: chatCollapsed ? 48 : '100%', overflow: 'hidden', transition: 'height .2s ease' }}>
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, display: 'flex', flexDirection: 'column', flex: chatCollapsed ? 'none' : 1, height: chatCollapsed ? 48 : undefined, minHeight: 0, overflow: 'hidden', transition: 'all .2s ease' }}>
               <div onClick={() => setChatCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', cursor: 'pointer', borderBottom: chatCollapsed ? 'none' : '1px solid var(--color-border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Icon name="chat" size={16} color="var(--color-amber)" />
@@ -496,9 +566,9 @@ export default function GameScreen() {
         </div>
 
         {/* RIGHT */}
-        <div className="game-right" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+        <div className="game-right" style={{ display: 'flex', flexDirection: 'column', gap: 12, height: boardSize + 238 }}>
           <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <MoveHistory moves={liveMoves} />
+            <MoveHistory moves={allMovesForHistory} />
           </div>
           <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 12 }}>
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600, marginBottom: 8 }}>Actions</div>

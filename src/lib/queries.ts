@@ -79,10 +79,14 @@ export function useLogout() {
   const logout = useAuth(s => s.logout)
 
   return useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      try {
+        await api.logout()
+      } catch {
+        // If the server call fails (expired session etc.) still clear local state
+      }
       logout()
       queryClient.clear()
-      return Promise.resolve()
     },
   })
 }
@@ -150,5 +154,40 @@ export function useDeleteGame() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
     },
+  })
+}
+
+// ─── Game move history ───
+export function useGetMoves(gameId: string | undefined) {
+  return useQuery({
+    queryKey: ['moves', gameId],
+    queryFn: () => api.getMoves(gameId!),
+    enabled: !!gameId,
+    staleTime: Infinity,
+  })
+}
+
+// ─── Game chat history ───
+export function useGameChat(gameId: string | undefined) {
+  return useQuery({
+    queryKey: ['chat', gameId],
+    queryFn: () => api.getChat(gameId!),
+    enabled: !!gameId,
+    staleTime: Infinity,   // history doesn't change; live updates come via WS
+  })
+}
+
+// ─── Forgot password ───
+export function useForgotPassword() {
+  return useMutation({
+    mutationFn: (email: string) => api.forgotPassword(email),
+  })
+}
+
+// ─── Reset password ───
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: (data: { email: string; otp: string; new_password: string }) =>
+      api.resetPassword(data),
   })
 }

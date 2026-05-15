@@ -390,6 +390,12 @@ export const api = {
   deleteGame:    (id: string) =>
                    request<{ message: string }>('DELETE', `/games/${id}`, undefined, true),
 
+  // Password reset
+  forgotPassword: (email: string) =>
+                   request<{ message: string }>('POST', '/users/forgot-password', { email }),
+  resetPassword:  (data: { email: string; otp: string; new_password: string }) =>
+                   request<{ message: string }>('POST', '/users/reset-password', data),
+
   // Chat (REST — for loading history; live chat goes over WebSocket)
   getChat:       (gameId: string) =>
                    request<ChatMessage[]>('GET', `/games/${gameId}/chat`, undefined, true),
@@ -397,4 +403,8 @@ export const api = {
   // TURN credentials for WebRTC
   turnCredentials: () =>
                    request<{ iceServers: RTCIceServer[] }>('GET', '/turn-credentials', undefined, true),
+
+  // Logout — invalidates the session cookie on the server
+  logout: () =>
+          request<void>('POST', '/logout', undefined, true),
 }
