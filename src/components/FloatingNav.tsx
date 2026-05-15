@@ -3,12 +3,13 @@ import Icon from './icons/Icon'
 
 const LINKS = [
   { to: '/', label: 'Home', icon: 'user' as const },
+  { to: '/lobby', label: 'Lobby', icon: 'globe' as const },
   { to: '/events', label: 'Events', icon: 'zap' as const },
   { to: '/login', label: 'Log in', icon: 'user' as const },
   { to: '/register', label: 'Sign up', icon: 'plus' as const },
 ]
 
-const GUEST_ROUTES = ['/', '/events', '/announcements', '/login', '/register']
+const GUEST_ROUTES = ['/', '/lobby', '/events', '/announcements', '/login', '/register']
 
 export default function FloatingNav() {
   const navigate = useNavigate()

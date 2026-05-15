@@ -84,6 +84,7 @@ export default function Landing() {
           <span className="font-display" style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.3 }}>Chesske</span>
         </div>
         <div className="nav-links" style={{ display: isMobile ? 'none' : 'flex', alignItems: 'center', gap: 22, color: 'var(--color-text-secondary)', fontSize: 14 }}>
+          <a onClick={() => navigate('/lobby')} style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', textDecoration: 'none' }}>Play now</a>
           <a onClick={() => navigate('/events')} style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', textDecoration: 'none' }}>Events</a>
           {user ? (
             <button onClick={() => navigate('/dashboard')} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '8px 18px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', fontSize: 14 }}>Dashboard</button>
@@ -115,8 +116,8 @@ export default function Landing() {
             <button onClick={() => navigate('/register')} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '14px 26px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', fontSize: 15, boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 18px -6px rgba(229,169,59,0.55)', textAlign: 'center' }}>
               Play your first game →
             </button>
-            <button onClick={() => navigate('/login')} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '14px 22px', fontWeight: 500, cursor: 'pointer', fontSize: 15, textAlign: 'center' }}>
-              I already have an account
+            <button onClick={() => navigate('/lobby')} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '14px 22px', fontWeight: 500, cursor: 'pointer', fontSize: 15, textAlign: 'center' }}>
+              Browse open games
             </button>
           </div>
 

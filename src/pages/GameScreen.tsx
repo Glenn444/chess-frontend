@@ -119,16 +119,17 @@ export default function GameScreen() {
   useEffect(() => {
     if (!error) return
     if (error === 'invalid token') {
-      // Token expired mid-game — refresh silently and let the connect effect re-trigger
+      // Token expired mid-game — disconnect first so the connect effect sees no socket,
+      // then set the fresh token so the effect re-runs and creates a new socket.
       fetchFreshToken().then(token => {
-        if (token) setWsToken(token)
+        if (token) { disconnect(); setWsToken(token) }
         else addToast('Session expired. Please log in again.', 'error')
       })
     } else {
       addToast(error, 'error')
     }
     clearError()
-  }, [error, addToast, clearError, setWsToken])
+  }, [error, addToast, clearError, setWsToken, disconnect])
 
   useEffect(() => {
     if (opponentDisconnected) addToast('Opponent disconnected — waiting for reconnect…', 'info')
@@ -142,14 +143,18 @@ export default function GameScreen() {
     }
   }, [restGame?.state])
 
-  // Connect when ready — connect() destroys the old socket internally, so no cleanup needed here
+  // Connect when ready.
+  // Only create a new socket when there isn't one already for this game.
+  // GameSocket manages its own reconnects internally, so we must not destroy
+  // and recreate it on re-renders or token refreshes — that produces ghost sessions
+  // that receive duplicate voice signaling messages from the server relay.
   useEffect(() => {
-    console.log('[GameScreen] WS effect — gameId:', gameId, '| wsToken:', wsToken ? 'set' : 'NULL', '| gameState:', restGame?.state)
-    if (gameId && wsToken && restGame?.state === 'active') {
-      connect(gameId, wsToken)
-    }
+    console.log('[GameScreen] WS effect — gameId:', gameId, '| wsToken:', wsToken ? 'set' : 'NULL', '| gameState:', restGame?.state, '| hasSocket:', !!socket)
+    if (!gameId || !wsToken || restGame?.state !== 'active') return
+    if (socket && socket.gameId === gameId) return  // already connected for this game
+    connect(gameId, wsToken)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, wsToken, restGame?.state])
+  }, [gameId, wsToken, restGame?.state, socket])
 
   // White player auto-initiates voice once game_state arrives; black auto-answers via useVoiceCall.
   // Track the socket instance so we can detect reconnects and restart voice after WS recovers.
@@ -281,14 +286,57 @@ export default function GameScreen() {
   const myColor = userColor === 'w' ? 'white' : 'black'
   const opponentColor = myColor === 'white' ? 'black' : 'white'
 
-  const isGameOver = ['checkmate', 'stalemate', 'resign', 'draw'].includes(restGame?.state ?? '')
+  const wsEndReason = (gameState?.end_reason && gameState.end_reason !== '') ? gameState.end_reason : null
+  const isGameOver =
+    ['checkmate', 'stalemate', 'resign', 'draw', 'abandoned'].includes(restGame?.state ?? '') ||
+    !!wsEndReason
   const gameActive = restGame?.state === 'active' && !isGameOver
 
-  // Timer values from server (milliseconds → seconds). Fall back to 600 if not yet loaded.
-  const whiteInitialSeconds = restGame ? Math.floor(restGame.white_time_remaining_ms / 1000) : 600
-  const blackInitialSeconds = restGame ? Math.floor(restGame.black_time_remaining_ms / 1000) : 600
-  const myInitialSeconds      = userColor === 'b' ? blackInitialSeconds : whiteInitialSeconds
+  // Timer: WS game_state is authoritative (synced on every broadcast), REST is initial value.
+  const whiteMs = gameState?.white_time_remaining_ms ?? restGame?.white_time_remaining_ms ?? 600000
+  const blackMs = gameState?.black_time_remaining_ms ?? restGame?.black_time_remaining_ms ?? 600000
+  const whiteInitialSeconds    = Math.floor(whiteMs / 1000)
+  const blackInitialSeconds    = Math.floor(blackMs / 1000)
+  const myInitialSeconds       = userColor === 'b' ? blackInitialSeconds : whiteInitialSeconds
   const opponentInitialSeconds = userColor === 'b' ? whiteInitialSeconds : blackInitialSeconds
+
+  // Game result for the end-game overlay.
+  // Prefers WS end_reason (fires instantly on the move broadcast) over REST state.
+  const gameResult = useMemo(() => {
+    const reason = wsEndReason || restGame?.end_reason || restGame?.state
+    if (!reason || !['checkmate', 'stalemate', 'resign', 'timeout', 'draw', 'abandoned'].includes(reason)) return null
+
+    const endedById = (gameState?.ended_by_player_id && gameState.ended_by_player_id !== '')
+      ? gameState.ended_by_player_id
+      : restGame?.ended_by_player_id
+    const currentPlayerNow = gameState?.current_player ?? restGame?.current_player
+
+    if (reason === 'stalemate') return { outcome: 'draw' as const, title: 'Draw', sub: 'by stalemate' }
+    if (reason === 'draw')      return { outcome: 'draw' as const, title: 'Draw', sub: '' }
+    if (reason === 'abandoned') return { outcome: 'draw' as const, title: 'Game abandoned', sub: '' }
+    if (reason === 'checkmate') {
+      // current_player after checkmate = the player who was just mated (it's their turn but they can't move)
+      const iLost = currentPlayerNow === userColor
+      return iLost
+        ? { outcome: 'loss' as const, title: 'Checkmate', sub: `${opponentName} wins` }
+        : { outcome: 'win' as const, title: 'Checkmate!', sub: 'You win!' }
+    }
+    if (reason === 'resign') {
+      // ended_by_player_id = the player who resigned (loser)
+      const loserIsMe = endedById === myPlayerId
+      return loserIsMe
+        ? { outcome: 'loss' as const, title: 'You resigned', sub: `${opponentName} wins` }
+        : { outcome: 'win' as const, title: `${opponentName} resigned`, sub: 'You win!' }
+    }
+    if (reason === 'timeout') {
+      // ended_by_player_id = the player who did NOT time out (winner)
+      const iWon = endedById === myPlayerId
+      return iWon
+        ? { outcome: 'win' as const, title: 'You win on time!', sub: `${opponentName} ran out of time` }
+        : { outcome: 'loss' as const, title: "Time's up", sub: `${opponentName} wins on time` }
+    }
+    return { outcome: 'draw' as const, title: 'Game over', sub: '' }
+  }, [wsEndReason, gameState?.ended_by_player_id, gameState?.current_player, restGame, userColor, myPlayerId, opponentName])
 
   const lastMoveSquares = liveMoves.length > 0
     ? [liveMoves[liveMoves.length - 1].move.slice(0, 2), liveMoves[liveMoves.length - 1].move.slice(2, 4)]
@@ -393,6 +441,19 @@ export default function GameScreen() {
                 </div>
               </div>
             )}
+
+            {gameResult && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,15,19,0.92)', display: 'grid', placeItems: 'center', borderRadius: 18, backdropFilter: 'blur(6px)', zIndex: 20 }}>
+                <div style={{ background: 'var(--color-bg-raised)', border: `1px solid ${gameResult.outcome === 'win' ? 'rgba(229,169,59,0.4)' : gameResult.outcome === 'loss' ? 'rgba(210,106,106,0.4)' : 'var(--color-border)'}`, borderRadius: 20, padding: 28, textAlign: 'center', maxWidth: 280 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 14, margin: '0 auto 14px', display: 'grid', placeItems: 'center', background: gameResult.outcome === 'win' ? 'rgba(229,169,59,0.15)' : gameResult.outcome === 'loss' ? 'rgba(210,106,106,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${gameResult.outcome === 'win' ? 'rgba(229,169,59,0.35)' : gameResult.outcome === 'loss' ? 'rgba(210,106,106,0.35)' : 'var(--color-border)'}` }}>
+                    <Icon name={gameResult.outcome === 'win' ? 'trophy' : gameResult.outcome === 'loss' ? 'flag' : 'handshake'} size={22} color={gameResult.outcome === 'win' ? 'var(--color-amber)' : gameResult.outcome === 'loss' ? 'var(--color-red)' : 'var(--color-text-secondary)'} />
+                  </div>
+                  <h3 className="font-display" style={{ fontSize: 20, margin: '0 0 6px', fontWeight: 500, color: gameResult.outcome === 'win' ? 'var(--color-amber)' : gameResult.outcome === 'loss' ? 'var(--color-red)' : 'var(--color-text-primary)' }}>{gameResult.title}</h3>
+                  {gameResult.sub && <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, margin: '0 0 18px' }}>{gameResult.sub}</p>}
+                  <button onClick={() => navigate('/games')} style={{ width: '100%', padding: '11px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', marginTop: gameResult.sub ? 0 : 16 }}>Back to games</button>
+                </div>
+              </div>
+            )}
           </div>
 
           <CompactPlayerStrip
@@ -417,15 +478,18 @@ export default function GameScreen() {
         }}>
           <button
             onClick={voice.toggleMute}
+            disabled={voice.status !== 'connected'}
             style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-              padding: '8px 12px', borderRadius: 999, border: 'none', cursor: 'pointer',
-              background: voice.muted ? 'transparent' : 'var(--color-amber)',
-              color: voice.muted ? 'var(--color-text-secondary)' : '#1A1408',
+              padding: '8px 12px', borderRadius: 999, border: 'none',
+              cursor: voice.status === 'connected' ? 'pointer' : 'default',
+              background: voice.status !== 'connected' ? 'transparent' : voice.muted ? 'transparent' : 'var(--color-amber)',
+              color: voice.status !== 'connected' ? 'var(--color-text-muted)' : voice.muted ? 'var(--color-text-secondary)' : '#1A1408',
+              opacity: voice.status === 'connected' ? 1 : 0.4,
               transition: 'all .15s ease', minWidth: 52,
             }}
           >
-            <Icon name={voice.muted ? 'mic-off' : 'mic'} size={18} color={voice.muted ? 'currentColor' : '#1A1408'} />
+            <Icon name={voice.muted ? 'mic-off' : 'mic'} size={18} color="currentColor" />
             <span style={{ fontSize: 9, fontWeight: 600 }}>{voice.muted ? 'Unmute' : 'Mute'}</span>
           </button>
           {[
@@ -453,7 +517,7 @@ export default function GameScreen() {
 
         <BottomSheet open={sheet === 'chat'} onClose={() => setSheet(null)} title="Chat">
           <div style={{ height: 360, display: 'flex', flexDirection: 'column' }}>
-            <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} />
+            <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} chatLimited={chatForUI.length >= 200} />
           </div>
         </BottomSheet>
         <BottomSheet open={sheet === 'moves'} onClose={() => setSheet(null)} title="Move History">
@@ -504,7 +568,7 @@ export default function GameScreen() {
                 </div>
                 <Icon name={chatCollapsed ? 'arrow-right' : 'x'} size={14} color="var(--color-text-muted)" />
               </div>
-              {!chatCollapsed && <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} />}
+              {!chatCollapsed && <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} chatLimited={chatForUI.length >= 200} />}
             </div>
           </div>
         </div>
@@ -553,6 +617,19 @@ export default function GameScreen() {
                     <button onClick={() => setResignOpen(false)} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '12px 20px', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
                     <button onClick={() => { setResignOpen(false); api.resignGame(gameId!).finally(() => navigate('/dashboard')) }} style={{ background: 'rgba(210,106,106,0.12)', color: '#E89494', border: '1px solid rgba(210,106,106,0.32)', borderRadius: 12, padding: '10px 16px', fontWeight: 500, cursor: 'pointer' }}>Yes, resign</button>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {gameResult && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,15,19,0.92)', display: 'grid', placeItems: 'center', borderRadius: 18, backdropFilter: 'blur(6px)', zIndex: 20 }}>
+                <div style={{ background: 'var(--color-bg-raised)', border: `1px solid ${gameResult.outcome === 'win' ? 'rgba(229,169,59,0.4)' : gameResult.outcome === 'loss' ? 'rgba(210,106,106,0.4)' : 'var(--color-border)'}`, borderRadius: 20, padding: 32, textAlign: 'center', maxWidth: 320 }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 16, margin: '0 auto 18px', display: 'grid', placeItems: 'center', background: gameResult.outcome === 'win' ? 'rgba(229,169,59,0.15)' : gameResult.outcome === 'loss' ? 'rgba(210,106,106,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${gameResult.outcome === 'win' ? 'rgba(229,169,59,0.35)' : gameResult.outcome === 'loss' ? 'rgba(210,106,106,0.35)' : 'var(--color-border)'}` }}>
+                    <Icon name={gameResult.outcome === 'win' ? 'trophy' : gameResult.outcome === 'loss' ? 'flag' : 'handshake'} size={26} color={gameResult.outcome === 'win' ? 'var(--color-amber)' : gameResult.outcome === 'loss' ? 'var(--color-red)' : 'var(--color-text-secondary)'} />
+                  </div>
+                  <h3 className="font-display" style={{ fontSize: 24, margin: '0 0 6px', fontWeight: 500, color: gameResult.outcome === 'win' ? 'var(--color-amber)' : gameResult.outcome === 'loss' ? 'var(--color-red)' : 'var(--color-text-primary)' }}>{gameResult.title}</h3>
+                  {gameResult.sub && <p style={{ color: 'var(--color-text-secondary)', fontSize: 14, margin: '0 0 22px' }}>{gameResult.sub}</p>}
+                  <button onClick={() => navigate('/games')} style={{ width: '100%', padding: '13px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 15, background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', marginTop: gameResult.sub ? 0 : 20 }}>Back to games</button>
                 </div>
               </div>
             )}

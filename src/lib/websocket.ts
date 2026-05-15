@@ -9,7 +9,7 @@ type EventHandler = (event: WSInboundEvent) => void
 
 export class GameSocket {
   private ws: WebSocket | null = null
-  private gameId: string
+  readonly gameId: string
   private token: string
   private handlers = new Set<EventHandler>()
   private pingTimer: ReturnType<typeof setInterval> | null = null

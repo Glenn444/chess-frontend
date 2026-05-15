@@ -11,10 +11,11 @@ interface ChatMessage {
   senderName: string
 }
 
-export default function ChatPanel({ messages, onSend, opponentName }: {
+export default function ChatPanel({ messages, onSend, opponentName, chatLimited = false }: {
   messages: ChatMessage[]
   onSend: (text: string) => void
   opponentName: string
+  chatLimited?: boolean
 }) {
   const [input, setInput] = useState('')
   const [visibleFrom, setVisibleFrom] = useState(() => Math.max(0, messages.length - PAGE_SIZE))
@@ -133,21 +134,27 @@ export default function ChatPanel({ messages, onSend, opponentName }: {
       </div>
 
       {/* Input */}
-      <div style={{ padding: '10px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: 8 }}>
-        <input
-          style={{ flex: 1, padding: '10px 12px', fontSize: 14, background: 'var(--color-bg-base)', border: '1px solid var(--color-border-strong)', borderRadius: 12, color: 'var(--color-text-primary)', outline: 'none' }}
-          placeholder="Say gg, glhf..."
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && input.trim()) { onSend(input.trim()); setInput('') } }}
-        />
-        <button
-          onClick={() => { if (input.trim()) { onSend(input.trim()); setInput('') } }}
-          style={{ background: 'var(--color-amber)', border: 'none', borderRadius: 10, width: 40, height: 40, color: '#1A1408', display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}
-        >
-          <Icon name="send" size={16} />
-        </button>
-      </div>
+      {chatLimited ? (
+        <div style={{ padding: '10px 12px', borderTop: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center' }}>
+          Chat limit reached (200 messages)
+        </div>
+      ) : (
+        <div style={{ padding: '10px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: 8 }}>
+          <input
+            style={{ flex: 1, padding: '10px 12px', fontSize: 14, background: 'var(--color-bg-base)', border: '1px solid var(--color-border-strong)', borderRadius: 12, color: 'var(--color-text-primary)', outline: 'none' }}
+            placeholder="Say gg, glhf..."
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && input.trim()) { onSend(input.trim()); setInput('') } }}
+          />
+          <button
+            onClick={() => { if (input.trim()) { onSend(input.trim()); setInput('') } }}
+            style={{ background: 'var(--color-amber)', border: 'none', borderRadius: 10, width: 40, height: 40, color: '#1A1408', display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}
+          >
+            <Icon name="send" size={16} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,18 +7,19 @@ export default memo(function PlayerCard({ player, isTurn, initialSeconds, gameAc
   initialSeconds: number
   gameActive: boolean
 }) {
+  const unlimited = initialSeconds === 0
   const [secs, setSecs] = useState(initialSeconds)
 
   useEffect(() => { setSecs(initialSeconds) }, [initialSeconds])
 
   useEffect(() => {
-    if (!isTurn || !gameActive) return
+    if (unlimited || !isTurn || !gameActive) return
     const id = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000)
     return () => clearInterval(id)
-  }, [isTurn, gameActive])
+  }, [unlimited, isTurn, gameActive])
 
   const mins = Math.floor(secs / 60)
-  const lowTime = mins < 1
+  const lowTime = !unlimited && mins < 1
   const display = `${mins}:${(secs % 60).toString().padStart(2, '0')}`
 
   return (
@@ -43,19 +44,21 @@ export default memo(function PlayerCard({ player, isTurn, initialSeconds, gameAc
           <span style={{ fontSize: 12, color: player.online ? 'var(--color-green)' : 'var(--color-text-muted)' }}>● {player.online ? 'Online' : 'Away'}</span>
         </div>
       </div>
-      <div style={{
-        background: lowTime ? 'rgba(210,106,106,0.15)' : (isTurn ? 'rgba(229,169,59,0.12)' : 'var(--color-bg-base)'),
-        border: `1px solid ${lowTime ? 'rgba(210,106,106,0.4)' : (isTurn ? 'var(--color-amber)' : 'var(--color-border-strong)')}`,
-        padding: '10px 14px', borderRadius: 12, minWidth: 88, textAlign: 'center',
-      }}>
-        <div className="font-mono font-display" style={{
-          fontSize: 24, fontWeight: 500, letterSpacing: -0.5,
-          color: lowTime ? 'var(--color-red)' : (isTurn ? 'var(--color-amber)' : 'var(--color-text-primary)'),
-        }}>{display}</div>
-        <div style={{ fontSize: 10, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2, fontWeight: 600 }}>
-          {isTurn ? 'Thinking' : 'Waiting'}
+      {!unlimited && (
+        <div style={{
+          background: lowTime ? 'rgba(210,106,106,0.15)' : (isTurn ? 'rgba(229,169,59,0.12)' : 'var(--color-bg-base)'),
+          border: `1px solid ${lowTime ? 'rgba(210,106,106,0.4)' : (isTurn ? 'var(--color-amber)' : 'var(--color-border-strong)')}`,
+          padding: '10px 14px', borderRadius: 12, minWidth: 88, textAlign: 'center',
+        }}>
+          <div className="font-mono font-display" style={{
+            fontSize: 24, fontWeight: 500, letterSpacing: -0.5,
+            color: lowTime ? 'var(--color-red)' : (isTurn ? 'var(--color-amber)' : 'var(--color-text-primary)'),
+          }}>{display}</div>
+          <div style={{ fontSize: 10, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2, fontWeight: 600 }}>
+            {isTurn ? 'Thinking' : 'Waiting'}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 })

@@ -107,7 +107,7 @@ export default function Matchmaking() {
   const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
 
   const presets = [
-    { l: 'Bullet', t: '1+0', c: 'var(--color-red)', i: 'bolt' as const },
+    { l: 'Unlimited', t: '∞', c: 'var(--color-text-muted)', i: 'handshake' as const },
     { l: 'Blitz', t: '5+0', c: 'var(--color-amber)', i: 'zap' as const },
     { l: 'Rapid', t: '10+0', c: 'var(--color-blue)', i: 'clock' as const },
     { l: 'Classical', t: '30+20', c: 'var(--color-green)', i: 'trophy' as const },
@@ -131,7 +131,7 @@ export default function Matchmaking() {
           <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600, marginBottom: 14 }}>Time control</div>
           <div className="mm-presets" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
             {presets.map(p => {
-              const presetTime = p.t.split('+')[0]
+              const presetTime = p.t === '∞' ? '0' : p.t.split('+')[0]
               return (
                 <div key={p.l} onClick={() => setTime(presetTime)}
                   style={{
@@ -215,9 +215,11 @@ export default function Matchmaking() {
           <button onClick={async () => {
             try {
               const playerColor = color === 'white' ? 'w' as const : color === 'black' ? 'b' as const : 'w' as const
-              const validTimes = [5, 10, 15, 30, 45, 60] as const
               const minutes = parseInt(time)
-              const timeControl = validTimes.reduce((prev, curr) => Math.abs(curr - minutes) < Math.abs(prev - minutes) ? curr : prev)
+              const validTimes = [5, 10, 15, 30, 45, 60] as const
+              const timeControl: 0 | 5 | 10 | 15 | 30 | 45 | 60 = minutes === 0
+                ? 0
+                : validTimes.reduce((prev, curr) => Math.abs(curr - minutes) < Math.abs(prev - minutes) ? curr : prev)
               await createGame.mutateAsync({ opponent: 'person', player_color: playerColor, time_control: timeControl })
               setPhase('share')
             } catch { /* error shown via mutation */ }

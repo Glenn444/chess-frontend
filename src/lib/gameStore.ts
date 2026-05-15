@@ -33,6 +33,10 @@ export interface LiveGameState {
   play_against: 'person' | 'stockfish'
   user_color?: 'w' | 'b'   // undefined when backend sends "" — GameScreen falls back to REST
   opponent_username?: string
+  white_time_remaining_ms?: number
+  black_time_remaining_ms?: number
+  end_reason?: string
+  ended_by_player_id?: string
 }
 
 export interface LiveMove {
@@ -41,6 +45,10 @@ export interface LiveMove {
   in_check: boolean
   is_checkmate: boolean
   is_stalemate: boolean
+  end_reason: string
+  ended_by_player_id: string
+  white_time_remaining_ms: number
+  black_time_remaining_ms: number
 }
 
 interface LiveGameStore {
@@ -78,6 +86,9 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
       switch (event.type) {
         case 'game_state': {
           const raw = event.payload
+          //console.log('[gameStore] game_state payload:', raw)
+         // console.log('[gameStore] raw:', JSON.stringify(raw, null, 2))
+          if (!raw?.game) break
           const g = raw.game
           const flatBoard = flattenBoard(g.Board)
           const gs: LiveGameState = {
@@ -89,6 +100,8 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
             play_against: (g.PlayAgainst as 'person' | 'stockfish') || 'person',
             user_color: g.UserColor === 'w' || g.UserColor === 'b' ? g.UserColor : undefined,
             opponent_username: raw.opponent_username,
+            white_time_remaining_ms: g.WhiteTimeRemainingMs,
+            black_time_remaining_ms: g.BlackTimeRemainingMs,
           }
           const pos = boardToPosition(flatBoard)
           set({ gameState: gs, position: pos, error: null })
@@ -105,6 +118,10 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
               current_player: mv.current_player,
               in_check: mv.in_check,
               status: mv.is_checkmate ? 'checkmate' : mv.is_stalemate ? 'stalemate' : s.gameState.status,
+              white_time_remaining_ms: mv.white_time_remaining_ms,
+              black_time_remaining_ms: mv.black_time_remaining_ms,
+              end_reason: mv.end_reason,
+              ended_by_player_id: mv.ended_by_player_id,
             } : null,
           }))
           break

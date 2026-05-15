@@ -198,8 +198,9 @@ export function useVoiceCall(socket: GameSocket | null) {
 
             const stream = await getLocalStream()
             stream.getTracks().forEach(t => {
+              t.enabled = !mutedRef.current
               pc.addTrack(t, stream)
-              console.log('[Voice] local audio track added to PC')
+              console.log('[Voice] answerer: local audio track added to PC — enabled:', t.enabled)
             })
 
             console.log('[Voice] setting remote description (offer)…')
@@ -286,8 +287,9 @@ export function useVoiceCall(socket: GameSocket | null) {
 
       const stream = await getLocalStream()
       stream.getTracks().forEach(t => {
+        t.enabled = !mutedRef.current
         pc.addTrack(t, stream)
-        console.log('[Voice] local audio track added to PC')
+        console.log('[Voice] offerer: local audio track added to PC — enabled:', t.enabled)
       })
 
       console.log('[Voice] creating offer…')
@@ -313,8 +315,33 @@ export function useVoiceCall(socket: GameSocket | null) {
     // which would cause the log and track mutation to fire twice per toggle.
     const newMuted = !mutedRef.current
     mutedRef.current = newMuted
-    localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = !newMuted })
-    console.log('[Voice] mute toggled — muted:', newMuted)
+
+    // Log what localStream tracks we're about to toggle
+    const localTracks = localStreamRef.current?.getAudioTracks() ?? []
+    console.log('[Voice] mute toggled — muted:', newMuted,
+      '| localStream tracks:', localTracks.map(t => ({
+        id: t.id.slice(0, 8),
+        label: t.label,
+        enabled: t.enabled,
+        readyState: t.readyState,
+      }))
+    )
+
+    localTracks.forEach(t => { t.enabled = !newMuted })
+
+    // Log PC senders after toggle — track IDs should match localStream tracks above
+    const senders = pcRef.current?.getSenders() ?? []
+    console.log('[Voice] PC senders after toggle:', senders.map(s => ({
+      kind: s.track?.kind,
+      id: s.track?.id.slice(0, 8),
+      enabled: s.track?.enabled,
+      readyState: s.track?.readyState,
+    })))
+
+    if (senders.length === 0) {
+      console.warn('[Voice] no senders on PC — mute may have no effect (stale PC or PC not created yet)')
+    }
+
     setState(s => ({ ...s, muted: newMuted }))
   }, [])
 

@@ -8,6 +8,7 @@ import FloatingNav from './components/FloatingNav'
 import MobileNav from './components/MobileNav'
 import ToastContainer from './components/Toast'
 import Landing from './pages/Landing'
+import Lobby from './pages/Lobby'
 import { Login, Register, ForgotPassword, ResetPassword } from './pages/Auth'
 import Dashboard from './pages/Dashboard'
 import Matchmaking from './pages/Matchmaking'
@@ -60,6 +61,7 @@ export default function App() {
     <PieceThemeProvider>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/lobby" element={<Lobby />} />
         <Route path="/events" element={<Events />} />
         <Route path="/events/:id" element={<EventDetail />} />
         <Route path="/announcements" element={<Navigate to="/events" replace />} />

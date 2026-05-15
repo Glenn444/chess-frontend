@@ -15,15 +15,17 @@ export default function Games() {
   const isMobile = useIsMobile()
   const user = useAuth(s => s.user)
   const [color, setColor] = useState<'w' | 'b'>('w')
-  const [timeControl, setTimeControl] = useState<5 | 10 | 15 | 30 | 45 | 60>(10)
+  const [timeControl, setTimeControl] = useState<0 | 5 | 10 | 15 | 30 | 45 | 60>(10)
+  const [visibility, setVisibility] = useState<'public' | 'private'>('public')
 
-  const timePresets: { label: string; minutes: 5 | 10 | 15 | 30 | 45 | 60 }[] = [
-    { label: '5 min',  minutes: 5  },
-    { label: '10 min', minutes: 10 },
-    { label: '15 min', minutes: 15 },
-    { label: '30 min', minutes: 30 },
-    { label: '45 min', minutes: 45 },
-    { label: '60 min', minutes: 60 },
+  const timePresets: { label: string; minutes: 0 | 5 | 10 | 15 | 30 | 45 | 60 }[] = [
+    { label: 'Unlimited', minutes: 0  },
+    { label: '5 min',     minutes: 5  },
+    { label: '10 min',    minutes: 10 },
+    { label: '15 min',    minutes: 15 },
+    { label: '30 min',    minutes: 30 },
+    { label: '45 min',    minutes: 45 },
+    { label: '60 min',    minutes: 60 },
   ]
 
   const { data: myGames = [], isLoading: loadingMine } = useMyGames()
@@ -37,8 +39,9 @@ export default function Games() {
 
   const openNav = useMobileNav(s => s.openNav)
   const displayName = user?.username || 'Player'
-  const pendingGames = myGames.filter((g: any) => g.state === 'waiting' || g.state === 'active')
-  const hasPendingGame = pendingGames.length >= 3
+  const activeGames = myGames.filter((g: any) => g.state === 'active')
+  const waitingGamesMine = myGames.filter((g: any) => g.state === 'waiting')
+  const hasPendingGame = activeGames.length >= 1 || waitingGamesMine.length >= 2
   const myGameIds = new Set(myGames.map((g: any) => g.id))
 
   const handleCreateGame = async () => {
@@ -51,6 +54,7 @@ export default function Games() {
         opponent: 'person',
         player_color: color,
         time_control: timeControl,
+        visibility,
       })
       const g = game as { id: string }
       navigate(`/game/${g.id}`)
@@ -165,7 +169,10 @@ export default function Games() {
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
               <Icon name="zap" size={14} />
-              You have reached the limit of 3 active games. Finish or delete one before creating a new one.
+              {activeGames.length >= 1
+                ? 'You already have an active game — finish it before creating a new one.'
+                : 'You already have 2 pending games — delete one or wait for them to fill before creating a new one.'
+              }
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -185,6 +192,24 @@ export default function Games() {
                 }}>
                   <div style={{ width: 16, height: 16, borderRadius: 4, background: o.b, border: '1px solid rgba(0,0,0,0.2)' }} />
                   Play as {o.l}
+                </button>
+              ))}
+            </div>
+
+            {/* Visibility toggle */}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {([
+                { k: 'public' as const, l: 'Public' },
+                { k: 'private' as const, l: 'Private' },
+              ]).map(o => (
+                <button key={o.k} onClick={() => setVisibility(o.k)} disabled={hasPendingGame} style={{
+                  padding: '8px 14px', borderRadius: 10, cursor: hasPendingGame ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500,
+                  border: visibility === o.k ? '1.5px solid var(--color-amber)' : '1px solid var(--color-border-strong)',
+                  background: visibility === o.k ? 'rgba(229,169,59,0.08)' : 'var(--color-bg-elev)',
+                  color: 'var(--color-text-primary)',
+                  opacity: hasPendingGame ? 0.5 : 1,
+                }}>
+                  {o.l}
                 </button>
               ))}
             </div>
@@ -253,9 +278,11 @@ export default function Games() {
                     background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)',
                     borderRadius: 14,
                   }}>
-                    <Avatar name="Opponent" size={isMobile ? 30 : 36} color="amber" />
+                    <Avatar name={g.white_player_id !== ZERO_UUID ? (g.white_player_name || 'Player') : (g.black_player_name || 'Player')} size={isMobile ? 30 : 36} color="amber" />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>Waiting player</div>
+                      <div style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>
+                        {g.white_player_id !== ZERO_UUID ? (g.white_player_name || 'Player') : (g.black_player_name || 'Player')}
+                      </div>
                       <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
                         Waiting for opponent
                       </div>
@@ -317,7 +344,7 @@ export default function Games() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>
-                          {hasOpponent ? 'vs Opponent' : 'Waiting…'}
+                          {hasOpponent ? `vs ${g.white_player_name === user?.username ? (g.black_player_name || 'Opponent') : (g.white_player_name || 'Opponent')}` : 'Waiting…'}
                         </span>
                         {hasOpponent && (
                           <span style={{
@@ -352,14 +379,16 @@ export default function Games() {
                     }}>
                       {isMobile ? 'Share' : 'Copy link'}
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); handleDeleteGame(g.id) }} style={{
-                      padding: isMobile ? '6px 10px' : '6px 14px', borderRadius: 8,
-                      border: '1px solid rgba(210,106,106,0.3)',
-                      background: 'rgba(210,106,106,0.08)', color: '#E89494',
-                      cursor: 'pointer', fontSize: isMobile ? 11 : 12, fontWeight: 500, whiteSpace: 'nowrap',
-                    }}>
-                      {isMobile ? 'Del' : 'Delete'}
-                    </button>
+                    {g.state === 'waiting' && (
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteGame(g.id) }} style={{
+                        padding: isMobile ? '6px 10px' : '6px 14px', borderRadius: 8,
+                        border: '1px solid rgba(210,106,106,0.3)',
+                        background: 'rgba(210,106,106,0.08)', color: '#E89494',
+                        cursor: 'pointer', fontSize: isMobile ? 11 : 12, fontWeight: 500, whiteSpace: 'nowrap',
+                      }}>
+                        {isMobile ? 'Del' : 'Delete'}
+                      </button>
+                    )}
                   </div>
                 </div>
               )})}

@@ -143,6 +143,9 @@ export interface Game {
   board_state: string        // JSON string — use parseBoardState()
   white_time_remaining_ms: number
   black_time_remaining_ms: number
+  end_reason?: 'resign' | 'checkmate' | 'stalemate' | 'timeout' | ''
+  ended_by_player_id?: string
+  visibility?: 'public' | 'private'
   created_at: string
   updated_at: string
 }
@@ -207,7 +210,8 @@ export interface MeResponse {
 export interface CreateGameRequest {
   opponent: 'person' | 'stockfish'
   player_color: PlayerColor
-  time_control: 5 | 10 | 15 | 30 | 45 | 60   // minutes — server accepts only these values
+  time_control: 0 | 5 | 10 | 15 | 30 | 45 | 60   // minutes; 0 = unlimited
+  visibility?: 'public' | 'private'
 }
 
 export interface CheckUsernameResponse {
@@ -266,6 +270,8 @@ export interface WSGameStateEvent {
       InCheck: boolean
       PlayAgainst: string
       UserColor: string        // may be "" — frontend derives color from REST fallback
+      WhiteTimeRemainingMs?: number
+      BlackTimeRemainingMs?: number
     }
     opponent_username?: string
   }
@@ -280,6 +286,10 @@ export interface WSMoveEvent {
     in_check: boolean
     is_checkmate: boolean
     is_stalemate: boolean
+    end_reason: string         // "" during play; "checkmate"|"stalemate"|"timeout" on game end
+    ended_by_player_id: string // "" during play; winner's ID on timeout/checkmate, loser's ID on resign
+    white_time_remaining_ms: number
+    black_time_remaining_ms: number
   }
 }
 
@@ -394,7 +404,7 @@ export const api = {
 
   // Password reset
   forgotPassword: (email: string) =>
-                   request<{ message: string }>('POST', '/users/forgot-password', { email }),
+                   request<{ msg: string; email: string }>('POST', '/users/forgot-password', { email }),
   resetPassword:  (data: { email: string; otp: string; new_password: string }) =>
                    request<{ message: string }>('POST', '/users/reset-password', data),
 
@@ -409,4 +419,9 @@ export const api = {
   // Logout — invalidates the session cookie on the server
   logout: () =>
           request<void>('POST', '/users/logout', undefined, true),
+
+  // Public games — no auth required
+  publicGames: (): Promise<Game[]> =>
+    fetch(`${BASE_URL}/games/public`)
+      .then(r => { if (!r.ok) throw new Error('Failed to fetch public games'); return r.json() }),
 }
