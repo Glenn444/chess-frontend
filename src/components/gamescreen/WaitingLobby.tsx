@@ -78,7 +78,7 @@ export default function WaitingLobby({ gameId, playerColor }: { gameId: string; 
           <button
             onClick={handleCopy}
             style={{
-              flexShrink: 0, padding: '7px 14px', borderRadius: 9, border: 'none',
+              flexShrink: 0, padding: '7px 14px', borderRadius: 9,
               cursor: 'pointer', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap',
               background: copied ? 'var(--color-green)' : 'var(--color-bg-base)',
               color: copied ? '#fff' : 'var(--color-text-primary)',

@@ -215,7 +215,10 @@ export default function Matchmaking() {
           <button onClick={async () => {
             try {
               const playerColor = color === 'white' ? 'w' as const : color === 'black' ? 'b' as const : 'w' as const
-              await createGame.mutateAsync({ opponent: 'person', player_color: playerColor })
+              const validTimes = [5, 10, 15, 30, 45, 60] as const
+              const minutes = parseInt(time)
+              const timeControl = validTimes.reduce((prev, curr) => Math.abs(curr - minutes) < Math.abs(prev - minutes) ? curr : prev)
+              await createGame.mutateAsync({ opponent: 'person', player_color: playerColor, time_control: timeControl })
               setPhase('share')
             } catch { /* error shown via mutation */ }
           }} disabled={createGame.isPending} style={{ minWidth: 200, background: createGame.isPending ? 'var(--color-border-strong)' : 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: createGame.isPending ? 'var(--color-text-muted)' : '#1A1408', fontWeight: 600, borderRadius: 14, padding: '14px 24px', border: '1px solid rgba(0,0,0,0.15)', cursor: createGame.isPending ? 'not-allowed' : 'pointer', boxShadow: createGame.isPending ? 'none' : '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 18px -6px rgba(229,169,59,0.55)', fontSize: 15, flex: isMobile ? '1 1 100%' : 'none', opacity: createGame.isPending ? 0.6 : 1 }}>
