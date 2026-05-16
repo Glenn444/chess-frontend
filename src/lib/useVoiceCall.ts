@@ -4,7 +4,7 @@ import type { WSInboundEvent } from './api'
 import { api } from './api'
 
 interface VoiceState {
-  status: 'idle' | 'connected' | 'ended'
+  status: 'idle' | 'connected' | 'degraded' | 'ended'
   muted: boolean
   micDenied: boolean
   error: string | null
@@ -29,10 +29,15 @@ export function useVoiceCall(socket: GameSocket | null) {
   const pcRef = useRef<RTCPeerConnection | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
-  // Buffer ICE candidates that arrive before remote description is set
   const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([])
   const remoteDescSet = useRef(false)
-  const mutedRef = useRef(true) // mirrors state.muted; used outside setState updaters
+  const mutedRef = useRef(true)
+  // Always-current socket ref — used in PC event handlers so they don't capture stale closures
+  const socketRef = useRef(socket)
+  const iceRestartInProgress = useRef(false)
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => { socketRef.current = socket }, [socket])
 
   const [state, setState] = useState<VoiceState>({
     status: 'idle', muted: true, micDenied: false, error: null,
@@ -44,6 +49,11 @@ export function useVoiceCall(socket: GameSocket | null) {
 
   const hangup = useCallback(() => {
     console.log('[Voice] hangup — closing peer connection')
+    if (disconnectTimerRef.current) {
+      clearTimeout(disconnectTimerRef.current)
+      disconnectTimerRef.current = null
+    }
+    iceRestartInProgress.current = false
     pcRef.current?.close()
     pcRef.current = null
     localStreamRef.current?.getTracks().forEach(t => t.stop())
@@ -55,6 +65,31 @@ export function useVoiceCall(socket: GameSocket | null) {
     }
     setState(s => ({ ...s, status: 'ended' }))
   }, [])
+
+  // ICE restart — cheaper than full PC teardown. Sends a new offer with iceRestart: true.
+  // The other side's voice_offer handler detects the live PC and answers without creating a new one.
+  const restartIce = useCallback(async () => {
+    const pc = pcRef.current
+    const sock = socketRef.current
+    if (!pc || !sock || iceRestartInProgress.current) return
+    if (pc.signalingState === 'closed') { hangup(); return }
+
+    iceRestartInProgress.current = true
+    console.log('[Voice] ICE restart — creating offer with iceRestart: true')
+    setState(s => ({ ...s, status: 'degraded' }))
+
+    try {
+      const offer = await pc.createOffer({ iceRestart: true })
+      await pc.setLocalDescription(offer)
+      sock.send('voice_offer', pc.localDescription)
+      console.log('[Voice] ICE restart offer sent')
+    } catch (e) {
+      console.error('[Voice] ICE restart failed — full hangup:', e)
+      hangup()
+    } finally {
+      iceRestartInProgress.current = false
+    }
+  }, [hangup])
 
   const flushIceCandidates = useCallback(async (pc: RTCPeerConnection) => {
     const queued = iceCandidateQueue.current.splice(0)
@@ -76,7 +111,7 @@ export function useVoiceCall(socket: GameSocket | null) {
     pc.onicecandidate = (e) => {
       if (e.candidate) {
         console.log('[Voice] local ICE candidate — sending via WS:', e.candidate.candidate.substring(0, 60))
-        socket?.send('voice_ice', e.candidate)
+        socketRef.current?.send('voice_ice', e.candidate)
       } else {
         console.log('[Voice] ICE gathering complete (null candidate)')
       }
@@ -89,7 +124,8 @@ export function useVoiceCall(socket: GameSocket | null) {
     pc.oniceconnectionstatechange = () => {
       console.log('[Voice] ICE connection state:', pc.iceConnectionState)
       if (pc.iceConnectionState === 'failed') {
-        console.error('[Voice] ICE failed — check TURN server or NAT traversal')
+        console.warn('[Voice] ICE failed — attempting ICE restart')
+        restartIce()
       }
     }
 
@@ -113,10 +149,15 @@ export function useVoiceCall(socket: GameSocket | null) {
       console.log('[Voice] connection state:', pc.connectionState)
 
       if (pc.connectionState === 'connected') {
+        if (disconnectTimerRef.current) {
+          clearTimeout(disconnectTimerRef.current)
+          disconnectTimerRef.current = null
+        }
+        iceRestartInProgress.current = false
+        setState(s => ({ ...s, status: 'connected' }))
         void (async () => {
           try {
             const stats = await pc.getStats()
-            // Build id → candidateType map from individual candidate reports
             const candidateTypes = new Map<string, string>()
             stats.forEach(r => {
               if (r.type === 'local-candidate' || r.type === 'remote-candidate') {
@@ -129,7 +170,7 @@ export function useVoiceCall(socket: GameSocket | null) {
                 const remoteType = candidateTypes.get(r.remoteCandidateId) ?? r.remoteCandidateId
                 const relayProtocol = r.relayProtocol ?? null
                 console.log('[Voice] stats — local:', localType, 'remote:', remoteType, 'relay:', relayProtocol)
-                socket?.send('voice_stats', {
+                socketRef.current?.send('voice_stats', {
                   localType,
                   remoteType,
                   relayProtocol,
@@ -145,14 +186,25 @@ export function useVoiceCall(socket: GameSocket | null) {
         })()
       }
 
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-        console.warn('[Voice] connection dropped — hanging up')
-        hangup()
+      if (pc.connectionState === 'disconnected') {
+        console.warn('[Voice] connection disconnected — waiting 5s before ICE restart')
+        setState(s => ({ ...s, status: 'degraded' }))
+        disconnectTimerRef.current = setTimeout(() => {
+          if (pcRef.current?.connectionState === 'disconnected') {
+            console.warn('[Voice] still disconnected after 5s — attempting ICE restart')
+            restartIce()
+          }
+        }, 5000)
+      }
+
+      if (pc.connectionState === 'failed') {
+        console.warn('[Voice] connection failed — attempting ICE restart')
+        restartIce()
       }
     }
 
     return pc
-  }, [socket, hangup])
+  }, [hangup, restartIce])
 
   const getLocalStream = async () => {
     console.log('[Voice] requesting microphone access…')
@@ -189,7 +241,29 @@ export function useVoiceCall(socket: GameSocket | null) {
     const unsub = socket.on(async (event: WSInboundEvent) => {
       switch (event.type) {
         case 'voice_offer': {
-          console.log('[Voice] ← voice_offer received (I am the answerer)')
+          console.log('[Voice] ← voice_offer received')
+
+          // If we already have a live PC, treat this as an ICE restart offer.
+          // Don't create a new PC — just renegotiate on the existing one.
+          const existingPc = pcRef.current
+          if (existingPc && existingPc.signalingState !== 'closed') {
+            console.log('[Voice] existing PC alive (%s) — handling as ICE restart offer', existingPc.connectionState)
+            try {
+              await existingPc.setRemoteDescription(new RTCSessionDescription(event.payload))
+              remoteDescSet.current = true
+              const answer = await existingPc.createAnswer()
+              await existingPc.setLocalDescription(answer)
+              socket.send('voice_answer', existingPc.localDescription)
+              console.log('[Voice] ICE restart answer sent')
+              iceRestartInProgress.current = false
+            } catch (e) {
+              console.error('[Voice] ICE restart answer failed:', e)
+            }
+            break
+          }
+
+          // No live PC — full setup (first connection or after hangup)
+          console.log('[Voice] no existing PC — full setup (I am the answerer)')
           try {
             const iceConfig = await fetchIceServers()
             const pc = createPC(iceConfig)
@@ -230,7 +304,6 @@ export function useVoiceCall(socket: GameSocket | null) {
             remoteDescSet.current = true
             console.log('[Voice] remote description set (answer) — flushing ICE queue…')
             await flushIceCandidates(pc)
-            setState(s => ({ ...s, status: 'connected' }))
           } catch (e) {
             console.error('[Voice] offerer setRemoteDescription failed:', e)
             setState(s => ({ ...s, error: 'Failed to connect audio' }))
@@ -270,14 +343,23 @@ export function useVoiceCall(socket: GameSocket | null) {
 
   const startCall = useCallback(async () => {
     if (!socket) { console.warn('[Voice] startCall — no socket'); return }
-    if (pcRef.current) {
-      // Stale PC from a previous session (e.g. WS reconnected). Close it and restart.
-      console.log('[Voice] startCall — closing stale PC before restart')
-      pcRef.current.close()
+
+    // If PC exists and is healthy, skip — voice survives WS reconnects independently.
+    // Only restart if the PC itself has failed or been closed.
+    const existingPc = pcRef.current
+    if (existingPc) {
+      const connState = existingPc.connectionState
+      if (connState !== 'failed' && connState !== 'closed') {
+        console.log('[Voice] startCall — PC already alive (%s), skipping', connState)
+        return
+      }
+      console.log('[Voice] startCall — PC is %s, closing and restarting', connState)
+      existingPc.close()
       pcRef.current = null
       iceCandidateQueue.current = []
       remoteDescSet.current = false
     }
+
     console.log('[Voice] startCall — I am the offerer')
     try {
       const iceConfig = await fetchIceServers()
@@ -310,13 +392,9 @@ export function useVoiceCall(socket: GameSocket | null) {
   }, [socket, hangup])
 
   const toggleMute = useCallback(() => {
-    // Side effects must live outside the setState updater — React 18 StrictMode
-    // invokes updater functions twice in development to detect impure updaters,
-    // which would cause the log and track mutation to fire twice per toggle.
     const newMuted = !mutedRef.current
     mutedRef.current = newMuted
 
-    // Log what localStream tracks we're about to toggle
     const localTracks = localStreamRef.current?.getAudioTracks() ?? []
     console.log('[Voice] mute toggled — muted:', newMuted,
       '| localStream tracks:', localTracks.map(t => ({
@@ -329,7 +407,6 @@ export function useVoiceCall(socket: GameSocket | null) {
 
     localTracks.forEach(t => { t.enabled = !newMuted })
 
-    // Log PC senders after toggle — track IDs should match localStream tracks above
     const senders = pcRef.current?.getSenders() ?? []
     console.log('[Voice] PC senders after toggle:', senders.map(s => ({
       kind: s.track?.kind,

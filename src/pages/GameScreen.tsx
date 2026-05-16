@@ -23,6 +23,7 @@ import { useToasts } from '../lib/toastStore'
 import { getHints, INITIAL_POSITION } from '../lib/chess'
 import { useGameChat, useGetMoves } from '../lib/queries'
 import { useMobileNav } from '../lib/mobileNavStore'
+import { playSelect, playGameStart, playLowTime } from '../hooks/useSounds'
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
 
@@ -60,6 +61,10 @@ export default function GameScreen() {
   const isMobile = useIsMobile()
   const openNav = useMobileNav(s => s.openNav)
   const [sheet, setSheet] = useState<'chat' | 'moves' | 'actions' | 'theme' | null>(null)
+  const [unreadChats, setUnreadChats] = useState(0)
+  const seenMsgIds = useRef(new Set<string>())
+  const gameStartSoundPlayed = useRef(false)
+  const lowTimeSoundPlayed = useRef(false)
 
   // ── REST: chat + move history — loaded once, live updates come via WS ──
   const { data: chatHistory } = useGameChat(gameId)
@@ -88,7 +93,7 @@ export default function GameScreen() {
   const {
     gameState, position, moves: liveMoves, chatMessages,
     connect, disconnect, makeMove, sendChat: wsSendChat,
-    opponentDisconnected, error, clearError,
+    opponentDisconnected, error, clearError, setMyPlayerId,
   } = useLiveGame()
 
   // ── userColor: WS is authoritative once connected, REST is the fallback ──
@@ -209,6 +214,7 @@ export default function GameScreen() {
       console.log('[click] select:', sq)
       selectedRef.current = sq
       setSelected(sq)
+      playSelect()
     } else if (prev === sq) {
       console.log('[click] deselect')
       selectedRef.current = null
@@ -239,6 +245,19 @@ export default function GameScreen() {
   // sender_id is a UUID — compare against the player IDs from the REST game object
   const myPlayerId = userColor === 'w' ? restGame?.white_player_id : restGame?.black_player_id
 
+  // Keep store in sync so chat sound can skip own messages
+  useEffect(() => {
+    if (myPlayerId) setMyPlayerId(myPlayerId)
+  }, [myPlayerId, setMyPlayerId])
+
+  // Game-start sound — once per session on first WS game_state
+  useEffect(() => {
+    if (gameState && !gameStartSoundPlayed.current) {
+      gameStartSoundPlayed.current = true
+      playGameStart()
+    }
+  }, [gameState])
+
   const chatForUI = useMemo(() => {
     // Merge REST history + live WS messages, dedupe by message ID
     const seen = new Set<string>()
@@ -258,6 +277,17 @@ export default function GameScreen() {
         : (restGame?.black_player_name ?? 'Black'),
     }))
   }, [chatHistory, chatMessages, myPlayerId, restGame])
+
+  // Unread message count — resets when the chat panel is open
+  const isChatOpen = (!isMobile && !chatCollapsed) || (isMobile && sheet === 'chat')
+  useEffect(() => {
+    if (isChatOpen) {
+      chatForUI.forEach(m => seenMsgIds.current.add(m.id))
+      setUnreadChats(0)
+    } else {
+      setUnreadChats(chatForUI.filter(m => !m.me && !seenMsgIds.current.has(m.id)).length)
+    }
+  }, [isChatOpen, chatForUI])
 
   // REST move history (base) + any WS moves that happened after (new moves during this session)
   const allMovesForHistory = useMemo(() => {
@@ -337,6 +367,14 @@ export default function GameScreen() {
     }
     return { outcome: 'draw' as const, title: 'Game over', sub: '' }
   }, [wsEndReason, gameState?.ended_by_player_id, gameState?.current_player, restGame, userColor, myPlayerId, opponentName])
+
+  // Low-time warning — once when user's clock crosses below 10 s
+  useEffect(() => {
+    if (gameActive && myInitialSeconds > 0 && myInitialSeconds <= 10 && !lowTimeSoundPlayed.current) {
+      lowTimeSoundPlayed.current = true
+      playLowTime()
+    }
+  }, [myInitialSeconds, gameActive])
 
   const lastMoveSquares = liveMoves.length > 0
     ? [liveMoves[liveMoves.length - 1].move.slice(0, 2), liveMoves[liveMoves.length - 1].move.slice(2, 4)]
@@ -478,26 +516,26 @@ export default function GameScreen() {
         }}>
           <button
             onClick={voice.toggleMute}
-            disabled={voice.status !== 'connected'}
+            disabled={voice.status !== 'connected' && voice.status !== 'degraded'}
             style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
               padding: '8px 12px', borderRadius: 999, border: 'none',
-              cursor: voice.status === 'connected' ? 'pointer' : 'default',
-              background: voice.status !== 'connected' ? 'transparent' : voice.muted ? 'transparent' : 'var(--color-amber)',
-              color: voice.status !== 'connected' ? 'var(--color-text-muted)' : voice.muted ? 'var(--color-text-secondary)' : '#1A1408',
-              opacity: voice.status === 'connected' ? 1 : 0.4,
+              cursor: (voice.status === 'connected' || voice.status === 'degraded') ? 'pointer' : 'default',
+              background: (voice.status !== 'connected' && voice.status !== 'degraded') ? 'transparent' : voice.muted ? 'transparent' : 'var(--color-amber)',
+              color: (voice.status !== 'connected' && voice.status !== 'degraded') ? 'var(--color-text-muted)' : voice.muted ? 'var(--color-text-secondary)' : '#1A1408',
+              opacity: (voice.status === 'connected' || voice.status === 'degraded') ? 1 : 0.4,
               transition: 'all .15s ease', minWidth: 52,
             }}
           >
             <Icon name={voice.muted ? 'mic-off' : 'mic'} size={18} color="currentColor" />
             <span style={{ fontSize: 9, fontWeight: 600 }}>{voice.muted ? 'Unmute' : 'Mute'}</span>
           </button>
-          {[
-            { k: 'chat' as const, icon: 'chat' as const, label: 'Chat' },
-            { k: 'moves' as const, icon: 'clock' as const, label: 'Moves' },
-            { k: 'actions' as const, icon: 'zap' as const, label: 'Actions' },
-            { k: 'theme' as const, icon: 'settings' as const, label: 'Theme' },
-          ].map(item => (
+          {([
+            { k: 'chat' as const, icon: 'chat' as const, label: 'Chat', badge: unreadChats },
+            { k: 'moves' as const, icon: 'clock' as const, label: 'Moves', badge: 0 },
+            { k: 'actions' as const, icon: 'zap' as const, label: 'Actions', badge: 0 },
+            { k: 'theme' as const, icon: 'settings' as const, label: 'Theme', badge: 0 },
+          ] as const).map(item => (
             <button
               key={item.k}
               onClick={() => setSheet(sheet === item.k ? null : item.k)}
@@ -509,7 +547,19 @@ export default function GameScreen() {
                 transition: 'all .15s ease', minWidth: 52,
               }}
             >
-              <Icon name={item.icon} size={18} color={sheet === item.k ? '#1A1408' : 'currentColor'} />
+              <div style={{ position: 'relative' }}>
+                <Icon name={item.icon} size={18} color={sheet === item.k ? '#1A1408' : 'currentColor'} />
+                {item.badge > 0 && (
+                  <div style={{
+                    position: 'absolute', top: -5, right: -8,
+                    background: 'var(--color-red)', color: '#fff', borderRadius: 999,
+                    minWidth: 14, height: 14, fontSize: 9, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px',
+                  }}>
+                    {item.badge > 99 ? '99+' : item.badge}
+                  </div>
+                )}
+              </div>
               <span style={{ fontSize: 9, fontWeight: 600 }}>{item.label}</span>
             </button>
           ))}
@@ -564,7 +614,10 @@ export default function GameScreen() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Icon name="chat" size={16} color="var(--color-amber)" />
                   <span style={{ fontSize: 13, fontWeight: 600 }}>Chat</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-bg-elev)', border: '1px solid var(--color-border-strong)', fontSize: 10, color: 'var(--color-text-secondary)' }}>{chatForUI.length}</span>
+                  {unreadChats > 0
+                    ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-red)', fontSize: 10, color: '#fff', fontWeight: 700 }}>{unreadChats > 99 ? '99+' : unreadChats}</span>
+                    : <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-bg-elev)', border: '1px solid var(--color-border-strong)', fontSize: 10, color: 'var(--color-text-secondary)' }}>{chatForUI.length}</span>
+                  }
                 </div>
                 <Icon name={chatCollapsed ? 'arrow-right' : 'x'} size={14} color="var(--color-text-muted)" />
               </div>

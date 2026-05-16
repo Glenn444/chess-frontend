@@ -3,6 +3,7 @@ import { GameSocket } from './websocket'
 import { type WSInboundEvent, type ChatMessage, type WSBoardCell } from './api'
 import { boardToPosition, applyMove } from './chess'
 import type { Position } from '../components/Board'
+import { playMove, playCapture, playCheck, playChat } from '../hooks/useSounds'
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 
@@ -59,12 +60,14 @@ interface LiveGameStore {
   chatMessages: ChatMessage[]
   error: string | null
   opponentDisconnected: boolean
+  myPlayerId: string | null
 
   connect: (gameId: string, token: string) => void
   disconnect: () => void
   makeMove: (move: string) => void
   sendChat: (content: string) => void
   clearError: () => void
+  setMyPlayerId: (id: string) => void
 }
 
 export const useLiveGame = create<LiveGameStore>((set, get) => ({
@@ -75,6 +78,7 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
   chatMessages: [],
   error: null,
   opponentDisconnected: false,
+  myPlayerId: null,
 
   connect: (gameId, token) => {
     console.log('[gameStore] connect — gameId:', gameId, 'hasToken:', !!token)
@@ -110,6 +114,13 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
 
         case 'make_move': {
           const mv = event.payload
+          // Play sound for opponent moves only: after opponent moves, current_player flips to us
+          const { gameState: gs, position: pos } = get()
+          if (gs?.user_color && mv.current_player === gs.user_color) {
+            if (mv.in_check) playCheck()
+            else if (pos?.[mv.move.slice(2, 4)]) playCapture()
+            else playMove()
+          }
           set(s => ({
             moves: [...s.moves, mv],
             position: s.position ? applyMove(s.position, mv.move) : null,
@@ -129,6 +140,8 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
 
         case 'chat': {
           const msg = event.payload
+          const { myPlayerId } = get()
+          if (!myPlayerId || msg.sender_id !== myPlayerId) playChat()
           set(s => ({ chatMessages: [...s.chatMessages, msg] }))
           break
         }
@@ -150,7 +163,7 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
       }
     })
 
-    set({ socket, position: null, moves: [], chatMessages: [], error: null, opponentDisconnected: false })
+    set({ socket, position: null, moves: [], chatMessages: [], error: null, opponentDisconnected: false, myPlayerId: null })
   },
 
   disconnect: () => {
@@ -169,4 +182,5 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+  setMyPlayerId: (id: string) => set({ myPlayerId: id }),
 }))
