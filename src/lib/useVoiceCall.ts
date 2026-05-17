@@ -36,6 +36,7 @@ export function useVoiceCall(socket: GameSocket | null) {
   const socketRef = useRef(socket)
   const iceRestartInProgress = useRef(false)
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isOffererRef = useRef(false)     // true when we called startCall (white side)
 
   useEffect(() => { socketRef.current = socket }, [socket])
 
@@ -54,6 +55,7 @@ export function useVoiceCall(socket: GameSocket | null) {
       disconnectTimerRef.current = null
     }
     iceRestartInProgress.current = false
+    isOffererRef.current = false
     pcRef.current?.close()
     pcRef.current = null
     localStreamRef.current?.getTracks().forEach(t => t.stop())
@@ -90,6 +92,33 @@ export function useVoiceCall(socket: GameSocket | null) {
       iceRestartInProgress.current = false
     }
   }, [hangup])
+
+  // Re-sends the current offer to the opponent without touching the PC, ICE, or mic.
+  // Called when the opponent reconnects and may have missed our original voice_offer.
+  const resendOffer = useCallback(async () => {
+    const pc = pcRef.current
+    const sock = socketRef.current
+    if (!pc || !sock || pc.signalingState === 'closed') return
+
+    console.log('[Voice] resendOffer — signalingState:', pc.signalingState)
+    if (pc.signalingState === 'have-local-offer' && pc.localDescription) {
+      // Offer already exists — just resend, no renegotiation needed
+      sock.send('voice_offer', pc.localDescription)
+      console.log('[Voice] resendOffer — existing offer re-sent')
+    } else if (pc.signalingState === 'stable') {
+      // Need a fresh offer (e.g. answer was received but connection never established)
+      try {
+        const offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+        sock.send('voice_offer', pc.localDescription)
+        console.log('[Voice] resendOffer — new offer sent')
+      } catch (e) {
+        console.error('[Voice] resendOffer — createOffer failed:', e)
+      }
+    } else {
+      console.log('[Voice] resendOffer — skipping, state not resendable:', pc.signalingState)
+    }
+  }, [])
 
   const flushIceCandidates = useCallback(async (pc: RTCPeerConnection) => {
     const queued = iceCandidateQueue.current.splice(0)
@@ -335,11 +364,31 @@ export function useVoiceCall(socket: GameSocket | null) {
           hangup()
           break
         }
+
+        case 'player_reconnected': {
+          console.log('[Voice] ← player_reconnected')
+          const pc = pcRef.current
+          // If we are the offerer and the PC is alive but voice isn't connected yet,
+          // the opponent may have missed our original voice_offer — re-send it after
+          // a short delay to let their WS session stabilise.
+          if (
+            isOffererRef.current &&
+            pc &&
+            pc.signalingState !== 'closed' &&
+            pc.connectionState !== 'connected'
+          ) {
+            console.log('[Voice] opponent reconnected, I am offerer — re-sending offer in 1s')
+            setTimeout(() => {
+              if (pcRef.current?.connectionState !== 'connected') resendOffer()
+            }, 1000)
+          }
+          break
+        }
       }
     })
 
     return () => unsub()
-  }, [socket, hangup, createPC, flushIceCandidates])
+  }, [socket, hangup, createPC, flushIceCandidates, resendOffer])
 
   const startCall = useCallback(async () => {
     if (!socket) { console.warn('[Voice] startCall — no socket'); return }
@@ -360,6 +409,7 @@ export function useVoiceCall(socket: GameSocket | null) {
       remoteDescSet.current = false
     }
 
+    isOffererRef.current = true
     console.log('[Voice] startCall — I am the offerer')
     try {
       const iceConfig = await fetchIceServers()
