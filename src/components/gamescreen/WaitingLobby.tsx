@@ -1,12 +1,30 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../icons/Icon'
+import { subscribeToPush } from '../../lib/push'
 
 export default function WaitingLobby({ gameId, playerColor }: { gameId: string; playerColor?: string }) {
   const navigate = useNavigate()
   const [copied, setCopied] = useState(false)
+  const [notifyState, setNotifyState] = useState<'idle' | 'prompt' | 'granted' | 'dismissed'>(
+    () => {
+      if (!('Notification' in window)) return 'dismissed'
+      if (Notification.permission === 'denied') return 'dismissed'
+      if (Notification.permission === 'granted') return 'granted'
+      return 'prompt'
+    }
+  )
   const inviteLink = `${window.location.origin}/game/${gameId}?join=true`
   const colorLabel = playerColor === 'w' ? 'White' : 'Black'
+
+  const handleEnableNotifications = async () => {
+    await subscribeToPush(gameId)
+    setNotifyState(
+      'Notification' in window && Notification.permission === 'granted'
+        ? 'granted'
+        : 'dismissed'
+    )
+  }
 
   const handleCopy = async () => {
     try {
@@ -55,9 +73,52 @@ export default function WaitingLobby({ gameId, playerColor }: { gameId: string; 
         <p style={{ color: 'var(--color-text-secondary)', fontSize: 14, margin: '0 0 6px', lineHeight: 1.5 }}>
           Share this link with a friend to start playing.
         </p>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: 12, margin: '0 0 24px' }}>
+        <p style={{ color: 'var(--color-text-muted)', fontSize: 12, margin: '0 0 16px' }}>
           Playing as <strong style={{ color: 'var(--color-amber)' }}>{colorLabel}</strong>
         </p>
+
+        {/* Notification prompt */}
+        {notifyState === 'prompt' && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 14px', marginBottom: 18,
+            borderRadius: 14,
+            background: 'rgba(229,169,59,0.08)',
+            border: '1px solid rgba(229,169,59,0.2)',
+          }}>
+            <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="var(--color-amber)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text-secondary)', textAlign: 'left' }}>
+              Get notified when your opponent joins
+            </span>
+            <button
+              onClick={handleEnableNotifications}
+              style={{
+                padding: '6px 14px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                background: 'var(--color-amber)', color: '#1A1408',
+                fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              Enable
+            </button>
+          </div>
+        )}
+
+        {notifyState === 'granted' && (
+          <div style={{
+            padding: '8px 14px', marginBottom: 18,
+            borderRadius: 14,
+            background: 'rgba(95,174,126,0.08)',
+            border: '1px solid rgba(95,174,126,0.2)',
+            fontSize: 13, color: 'var(--color-green)',
+            display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+          }}>
+            <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={2}><path d="M5 12l5 5 9-11" /></svg>
+            You'll be notified when your opponent joins.
+          </div>
+        )}
 
         {/* Link box */}
         <div style={{
