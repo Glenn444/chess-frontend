@@ -18,12 +18,8 @@ export default function WaitingLobby({ gameId, playerColor }: { gameId: string; 
   const colorLabel = playerColor === 'w' ? 'White' : 'Black'
 
   const handleEnableNotifications = async () => {
-    await subscribeToPush(gameId)
-    setNotifyState(
-      'Notification' in window && Notification.permission === 'granted'
-        ? 'granted'
-        : 'dismissed'
-    )
+    const success = await subscribeToPush()
+    setNotifyState(success ? 'granted' : 'dismissed')
   }
 
   const handleCopy = async () => {

@@ -56,7 +56,7 @@ export default function ChatPanel({ messages, onSend, opponentName, chatLimited 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* Message list */}
-      <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
 
         {/* Load previous button */}
         {hasMore && (
@@ -86,48 +86,64 @@ export default function ChatPanel({ messages, onSend, opponentName, chatLimited 
           const isLastInGroup = !next || next.me !== m.me
 
           return (
-            <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.me ? 'flex-end' : 'flex-start', marginTop: isFirstInGroup ? 10 : 2 }}>
-              {isFirstInGroup && (
-                <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 4, paddingLeft: m.me ? 0 : 40, paddingRight: m.me ? 4 : 0 }}>
-                  {m.me ? 'You' : m.senderName}
-                </div>
+            <div
+              key={m.id}
+              style={{
+                display: 'flex',
+                width: '100%',
+                flexDirection: m.me ? 'row-reverse' : 'row',
+                alignItems: 'flex-end',
+                gap: 8,
+                marginTop: isFirstInGroup ? 10 : 2,
+              }}
+            >
+              {/* Avatar — opponent only, shown on last bubble in group */}
+              {!m.me && (
+                isLastInGroup ? (
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                    background: 'linear-gradient(135deg, #E58EA2, #C26483)',
+                    display: 'grid', placeItems: 'center',
+                    fontSize: 12, fontWeight: 700, color: '#1A1408',
+                    border: '1px solid rgba(0,0,0,0.15)',
+                  }}>
+                    {initial(opponentName)}
+                  </div>
+                ) : (
+                  <div style={{ width: 28, flexShrink: 0 }} />
+                )
               )}
 
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexDirection: m.me ? 'row-reverse' : 'row', maxWidth: '86%' }}>
-                {!m.me ? (
-                  isLastInGroup ? (
-                    <div style={{
-                      width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                      background: 'linear-gradient(135deg, #E58EA2, #C26483)',
-                      display: 'grid', placeItems: 'center',
-                      fontSize: 12, fontWeight: 700, color: '#1A1408',
-                      border: '1px solid rgba(0,0,0,0.15)',
-                    }}>
-                      {initial(opponentName)}
-                    </div>
-                  ) : (
-                    <div style={{ width: 28, flexShrink: 0 }} />
-                  )
-                ) : null}
+              {/* Bubble */}
+              <div style={{
+                maxWidth: '75%',
+                minWidth: 80,
+                padding: '7px 11px 6px',
+                borderRadius: 16,
+                borderBottomRightRadius: m.me ? (isLastInGroup ? 4 : 16) : 16,
+                borderBottomLeftRadius: !m.me ? (isLastInGroup ? 4 : 16) : 16,
+                wordBreak: 'break-word',
+                background: m.me ? 'var(--color-amber)' : 'var(--color-bg-base)',
+                color: m.me ? '#1A1408' : 'var(--color-text-primary)',
+                border: m.me ? 'none' : '1px solid var(--color-border-strong)',
+              }}>
+                {/* Sender name — opponent bubbles only, first in group */}
+                {!m.me && isFirstInGroup && (
+                  <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 3, color: '#E58EA2', opacity: 0.9 }}>
+                    {m.senderName}
+                  </div>
+                )}
 
+                <div style={{ fontSize: 14, lineHeight: 1.45 }}>{m.text}</div>
+
+                {/* Timestamp inside bubble, bottom-right */}
                 <div style={{
-                  padding: '8px 12px', borderRadius: 16,
-                  borderBottomRightRadius: m.me ? (isLastInGroup ? 4 : 16) : 16,
-                  borderBottomLeftRadius: m.me ? 16 : (isLastInGroup ? 4 : 16),
-                  fontSize: 14, lineHeight: 1.45, wordBreak: 'break-word',
-                  background: m.me ? 'var(--color-amber)' : 'var(--color-bg-base)',
-                  color: m.me ? '#1A1408' : 'var(--color-text-primary)',
-                  border: m.me ? 'none' : '1px solid var(--color-border-strong)',
+                  fontSize: 10, marginTop: 4, textAlign: 'right',
+                  color: m.me ? 'rgba(26,20,8,0.55)' : 'var(--color-text-muted)',
                 }}>
-                  {m.text}
-                </div>
-              </div>
-
-              {isLastInGroup && (
-                <div style={{ fontSize: 10, color: 'var(--color-text-muted)', marginTop: 3, paddingLeft: m.me ? 0 : 40, paddingRight: m.me ? 4 : 0 }}>
                   {m.time}
                 </div>
-              )}
+              </div>
             </div>
           )
         })}

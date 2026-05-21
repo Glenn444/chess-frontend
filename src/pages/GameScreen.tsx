@@ -26,6 +26,7 @@ import { useMobileNav } from '../lib/mobileNavStore'
 import { playSelect, playGameStart, playLowTime } from '../hooks/useSounds'
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
+const GAME_OVER_REASONS = ['checkmate', 'stalemate', 'resign', 'draw', 'abandoned', 'timeout']
 
 function boardStateToPosition(game: Game): Position {
   const bs = parseBoardState(game)
@@ -65,6 +66,10 @@ export default function GameScreen() {
   const seenMsgIds = useRef(new Set<string>())
   const gameStartSoundPlayed = useRef(false)
   const lowTimeSoundPlayed = useRef(false)
+  // Refs that mirror derived state so handleSquareClick never needs them as deps
+  const displayPositionRef = useRef<import('../components/Board').Position>(INITIAL_POSITION)
+  const userColorRef = useRef<'w' | 'b' | null>(null)
+  const isGameOverRef = useRef(false)
 
   // ── REST: chat + move history — loaded once, live updates come via WS ──
   const { data: chatHistory } = useGameChat(gameId)
@@ -96,14 +101,54 @@ export default function GameScreen() {
     opponentDisconnected, error, clearError, setMyPlayerId,
   } = useLiveGame()
 
-  // ── userColor: WS is authoritative once connected, REST is the fallback ──
-  // REST uses white_player_name / black_player_name (not white_username)
+  // ── userColor ──
+  // REST UUID comparison is the ground truth: if the current user's UUID matches
+  // white_player_id or black_player_id we know exactly which side they play.
+  // WS UserColor is used as a fallback because some backend versions send "" or
+  // the wrong color for the joining player.  Username comparison is the last resort.
   const userColor = useMemo<'w' | 'b' | null>(() => {
-    if (gameState?.user_color) return gameState.user_color
-    if (restGame && currentUser) {
-      if (restGame.white_player_name === currentUser.username) return 'w'
-      if (restGame.black_player_name === currentUser.username) return 'b'
+    console.log('[userColor] resolving —', {
+      currentUserId: currentUser?.user_id ?? '(none)',
+      currentUsername: currentUser?.username ?? '(none)',
+      whitePlayerId: restGame?.white_player_id ?? '(no restGame)',
+      blackPlayerId: restGame?.black_player_id ?? '(no restGame)',
+      whiteName: restGame?.white_player_name ?? '(none)',
+      blackName: restGame?.black_player_name ?? '(none)',
+      wsUserColor: gameState?.user_color ?? '(none)',
+    })
+
+    if (restGame && currentUser?.user_id) {
+      if (restGame.white_player_id === currentUser.user_id) {
+        console.log('[userColor] → "w" via REST UUID match (white)')
+        return 'w'
+      }
+      if (restGame.black_player_id === currentUser.user_id) {
+        console.log('[userColor] → "b" via REST UUID match (black)')
+        return 'b'
+      }
+      console.log('[userColor] REST UUID check ran but found no match — IDs may be wrong or stale')
+    } else {
+      console.log('[userColor] REST UUID check skipped —', !restGame ? 'no restGame' : 'no currentUser.user_id')
     }
+
+    if (gameState?.user_color) {
+      console.log('[userColor] → "%s" via WS user_color', gameState.user_color)
+      return gameState.user_color
+    }
+
+    if (restGame && currentUser) {
+      if (restGame.white_player_name === currentUser.username) {
+        console.log('[userColor] → "w" via username fallback')
+        return 'w'
+      }
+      if (restGame.black_player_name === currentUser.username) {
+        console.log('[userColor] → "b" via username fallback')
+        return 'b'
+      }
+      console.log('[userColor] username fallback found no match — white:', restGame.white_player_name, '/ black:', restGame.black_player_name)
+    }
+
+    console.log('[userColor] → null (unresolved)')
     return null
   }, [gameState?.user_color, restGame, currentUser])
 
@@ -170,7 +215,7 @@ export default function GameScreen() {
       lastVoiceSocket.current = socket
       if (socket && voiceInitiated.current) {
         // Socket reconnected — old PC is dead. Reset so we retry below.
-        console.log('[GameScreen] socket reconnected — resetting voice for retry')
+        // console.log('[GameScreen] socket reconnected — resetting voice for retry')
         voiceInitiated.current = false
       }
     }
@@ -209,6 +254,7 @@ export default function GameScreen() {
   // Use a ref so the handler is never recreated and makeMove is never
   // called inside a state updater (which StrictMode would double-invoke).
   const handleSquareClick = useCallback((sq: string) => {
+    if (isGameOverRef.current) return   // lock board as soon as game ends
     const prev = selectedRef.current
     if (!prev) {
       console.log('[click] select:', sq)
@@ -220,10 +266,22 @@ export default function GameScreen() {
       selectedRef.current = null
       setSelected(null)
     } else {
-      console.log('[click] move attempt:', prev + sq)
-      makeMove(prev + sq)
-      selectedRef.current = null
-      setSelected(null)
+      // If the user clicks one of their own pieces while another is selected,
+      // re-select rather than sending an illegal move that triggers an error toast.
+      const destPiece = displayPositionRef.current[sq]
+      const uc = userColorRef.current
+      const ownColor = uc === 'w' ? 'l' : 'd'
+      if (destPiece && uc !== null && destPiece.c === ownColor) {
+        console.log('[click] re-select:', sq)
+        selectedRef.current = sq
+        setSelected(sq)
+        playSelect()
+      } else {
+        console.log('[click] move attempt:', prev + sq)
+        makeMove(prev + sq)
+        selectedRef.current = null
+        setSelected(null)
+      }
     }
   }, [makeMove])
 
@@ -237,13 +295,17 @@ export default function GameScreen() {
     if (restGame) return boardStateToPosition(restGame)
     return INITIAL_POSITION
   }, [position, restGame])
+  // Keep refs in sync so handleSquareClick can read current values without stale closure issues
+  displayPositionRef.current = displayPosition
+  userColorRef.current = userColor
 
   const hints = useMemo(() =>
     selected ? getHints(displayPosition, selected) : [],
   [selected, displayPosition])
 
-  // sender_id is a UUID — compare against the player IDs from the REST game object
-  const myPlayerId = userColor === 'w' ? restGame?.white_player_id : restGame?.black_player_id
+  // sender_id is a UUID — prefer currentUser.user_id directly; fall back to color-derived ID
+  const myPlayerId = currentUser?.user_id
+    ?? (userColor === 'w' ? restGame?.white_player_id : restGame?.black_player_id)
 
   // Keep store in sync so chat sound can skip own messages
   useEffect(() => {
@@ -313,14 +375,26 @@ export default function GameScreen() {
   // Turn / color helpers — before WS connects, derive from REST current_player
   const currentPlayer = gameState?.current_player ?? restGame?.current_player
   const isMyTurn = userColor ? currentPlayer === userColor : false
-  const myColor = userColor === 'w' ? 'white' : 'black'
-  const opponentColor = myColor === 'white' ? 'black' : 'white'
+  // Use === 'b' so that null (unresolved) defaults to 'white', consistent with the unflipped board
+  const myColor = userColor === 'b' ? 'black' : 'white'
+  const opponentColor = userColor === 'b' ? 'white' : 'black'
 
-  const wsEndReason = (gameState?.end_reason && gameState.end_reason !== '') ? gameState.end_reason : null
+  // Prefer make_move.end_reason (arrives instantly with the move that ends the game).
+  // Fall back to gameState.status, which is set from game_state.Status — this covers:
+  //   • resign broadcast as a game_state event (no make_move involved)
+  //   • legacy backends that use is_checkmate/is_stalemate flags but leave end_reason empty
+  const wsEndReason =
+    (gameState?.end_reason && gameState.end_reason !== '') ? gameState.end_reason
+    : (gameState?.status && GAME_OVER_REASONS.includes(gameState.status)) ? gameState.status
+    : null
+  console.log('[gameOver] wsEndReason:', wsEndReason, '| gameState.end_reason:', gameState?.end_reason ?? '(none)', '| gameState.status:', gameState?.status ?? '(none)', '| restGame.state:', restGame?.state ?? '(none)')
+
   const isGameOver =
-    ['checkmate', 'stalemate', 'resign', 'draw', 'abandoned'].includes(restGame?.state ?? '') ||
+    GAME_OVER_REASONS.includes(restGame?.state ?? '') ||
     !!wsEndReason
+  isGameOverRef.current = isGameOver
   const gameActive = restGame?.state === 'active' && !isGameOver
+  console.log('[gameOver] isGameOver:', isGameOver, '| gameActive:', gameActive)
 
   // Timer: WS game_state is authoritative (synced on every broadcast), REST is initial value.
   const whiteMs = gameState?.white_time_remaining_ms ?? restGame?.white_time_remaining_ms ?? 600000
@@ -333,13 +407,35 @@ export default function GameScreen() {
   // Game result for the end-game overlay.
   // Prefers WS end_reason (fires instantly on the move broadcast) over REST state.
   const gameResult = useMemo(() => {
-    const reason = wsEndReason || restGame?.end_reason || restGame?.state
-    if (!reason || !['checkmate', 'stalemate', 'resign', 'timeout', 'draw', 'abandoned'].includes(reason)) return null
+    let reason = wsEndReason || (restGame?.end_reason || '') || restGame?.state
+    if (!reason || !GAME_OVER_REASONS.includes(reason)) return null
 
     const endedById = (gameState?.ended_by_player_id && gameState.ended_by_player_id !== '')
       ? gameState.ended_by_player_id
       : restGame?.ended_by_player_id
     const currentPlayerNow = gameState?.current_player ?? restGame?.current_player
+
+    console.log('[gameResult] computing —', {
+      reason,
+      wsEndReason,
+      restGameEndReason: restGame?.end_reason,
+      restGameState: restGame?.state,
+      endedById: endedById ?? '(none)',
+      currentPlayerNow,
+      userColor,
+      myPlayerId: myPlayerId ?? '(none)',
+    })
+
+    // Fallback: if backend stores timeout as state='checkmate' without setting end_reason,
+    // detect it by checking which player's clock reached zero.
+    if (reason === 'checkmate' && !wsEndReason && !restGame?.end_reason) {
+      const wMs = restGame?.white_time_remaining_ms
+      const bMs = restGame?.black_time_remaining_ms
+      if ((wMs === 0 && bMs != null && bMs > 0) || (bMs === 0 && wMs != null && wMs > 0)) {
+        console.log('[gameResult] overriding checkmate → timeout (clock at zero)')
+        reason = 'timeout'
+      }
+    }
 
     if (reason === 'stalemate') return { outcome: 'draw' as const, title: 'Draw', sub: 'by stalemate' }
     if (reason === 'draw')      return { outcome: 'draw' as const, title: 'Draw', sub: '' }
@@ -347,6 +443,7 @@ export default function GameScreen() {
     if (reason === 'checkmate') {
       // current_player after checkmate = the player who was just mated (it's their turn but they can't move)
       const iLost = currentPlayerNow === userColor
+      console.log('[gameResult] checkmate — currentPlayerNow:', currentPlayerNow, '| userColor:', userColor, '| iLost:', iLost)
       return iLost
         ? { outcome: 'loss' as const, title: 'Checkmate', sub: `${opponentName} wins` }
         : { outcome: 'win' as const, title: 'Checkmate!', sub: 'You win!' }
@@ -354,19 +451,21 @@ export default function GameScreen() {
     if (reason === 'resign') {
       // ended_by_player_id = the player who resigned (loser)
       const loserIsMe = endedById === myPlayerId
+      console.log('[gameResult] resign — endedById:', endedById, '| myPlayerId:', myPlayerId, '| loserIsMe:', loserIsMe)
       return loserIsMe
         ? { outcome: 'loss' as const, title: 'You resigned', sub: `${opponentName} wins` }
         : { outcome: 'win' as const, title: `${opponentName} resigned`, sub: 'You win!' }
     }
     if (reason === 'timeout') {
-      // ended_by_player_id = the player who did NOT time out (winner)
-      const iWon = endedById === myPlayerId
-      return iWon
-        ? { outcome: 'win' as const, title: 'You win on time!', sub: `${opponentName} ran out of time` }
-        : { outcome: 'loss' as const, title: "Time's up", sub: `${opponentName} wins on time` }
+      // The player whose turn it was when time ran out is the loser — same convention as checkmate.
+      const iLost = currentPlayerNow === userColor
+      console.log('[gameResult] timeout — currentPlayerNow:', currentPlayerNow, '| userColor:', userColor, '| iLost:', iLost)
+      return iLost
+        ? { outcome: 'loss' as const, title: "Time's up!", sub: `${opponentName} wins on time` }
+        : { outcome: 'win' as const, title: 'You win on time!', sub: `${opponentName} ran out of time` }
     }
     return { outcome: 'draw' as const, title: 'Game over', sub: '' }
-  }, [wsEndReason, gameState?.ended_by_player_id, gameState?.current_player, restGame, userColor, myPlayerId, opponentName])
+  }, [wsEndReason, gameState?.ended_by_player_id, gameState?.current_player, gameState?.status, restGame, userColor, myPlayerId, opponentName])
 
   // Low-time warning — once when user's clock crosses below 10 s
   useEffect(() => {
@@ -434,7 +533,7 @@ export default function GameScreen() {
         )}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 8px', gap: 10 }}>
           <CompactPlayerStrip
-            player={{ name: opponentName, rating: '1200', avatarColor: 'rose', online: !opponentDisconnected }}
+            player={{ name: opponentName, rating: '1200', avatarColor: 'rose', online: !opponentDisconnected, color: opponentColor }}
             isTurn={!isMyTurn}
             initialSeconds={opponentInitialSeconds}
             gameActive={gameActive}
@@ -495,7 +594,7 @@ export default function GameScreen() {
           </div>
 
           <CompactPlayerStrip
-            player={{ name: currentUser?.username || 'You', rating: '1200', avatarColor: 'amber', online: true }}
+            player={{ name: currentUser?.username || 'You', rating: '1200', avatarColor: 'amber', online: true, color: myColor }}
             isTurn={isMyTurn}
             initialSeconds={myInitialSeconds}
             gameActive={gameActive}

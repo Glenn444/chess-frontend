@@ -2,7 +2,7 @@ import { memo, useState, useEffect } from 'react'
 import Avatar from '../Avatar'
 
 export default memo(function CompactPlayerStrip({ player, isTurn, initialSeconds, gameActive }: {
-  player: { name: string; rating: string; avatarColor: string; online?: boolean }
+  player: { name: string; rating: string; avatarColor: string; online?: boolean; color?: string }
   isTurn: boolean
   initialSeconds: number
   gameActive: boolean
@@ -34,7 +34,13 @@ export default memo(function CompactPlayerStrip({ player, isTurn, initialSeconds
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, fontSize: 14 }}>{player.name}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{player.rating}</span>
+          {player.color && (
+            <>
+              <div style={{ width: 9, height: 9, borderRadius: 2, background: player.color === 'white' ? 'var(--color-piece-light)' : 'var(--color-piece-dark)', border: '1px solid rgba(255,255,255,0.1)', flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Playing {player.color}</span>
+            </>
+          )}
+          {!player.color && <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{player.rating}</span>}
           {player.online !== undefined && (
             <span style={{ fontSize: 11, color: player.online ? 'var(--color-green)' : 'var(--color-text-muted)' }}>
               ● {player.online ? 'Online' : 'Away'}

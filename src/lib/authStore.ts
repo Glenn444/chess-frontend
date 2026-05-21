@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 export interface AuthUser {
+  user_id: string
   username: string
   email: string
   email_confirmed: boolean

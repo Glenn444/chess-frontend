@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import Sidebar from '../components/Sidebar'
 import Icon from '../components/icons/Icon'
 import Avatar from '../components/Avatar'
@@ -9,11 +10,15 @@ import { useAuth } from '../lib/authStore'
 import { useMyGames, useWaitingGames, useCreateGame, useJoinGame, useDeleteGame } from '../lib/queries'
 import { useToasts } from '../lib/toastStore'
 import { useMobileNav } from '../lib/mobileNavStore'
+import { subscribeToPush, isPushSubscribed } from '../lib/push'
+import { GameSocket } from '../lib/websocket'
 
 export default function Games() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const user = useAuth(s => s.user)
+  const wsToken = useAuth(s => s.wsToken)
+  const queryClient = useQueryClient()
   const [color, setColor] = useState<'w' | 'b'>('w')
   const [timeControl, setTimeControl] = useState<0 | 5 | 10 | 15 | 30 | 45 | 60>(10)
   const [visibility, setVisibility] = useState<'public' | 'private'>('public')
@@ -27,6 +32,30 @@ export default function Games() {
     { label: '45 min',    minutes: 45 },
     { label: '60 min',    minutes: 60 },
   ]
+
+  // Global push subscription state — checked once on mount
+  const [pushState, setPushState] = useState<'loading' | 'prompt' | 'granted' | 'dismissed'>('loading')
+
+  useEffect(() => {
+    async function checkPushState() {
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+        setPushState('dismissed')
+        return
+      }
+      if (Notification.permission === 'denied') {
+        setPushState('dismissed')
+        return
+      }
+      const subscribed = await isPushSubscribed()
+      setPushState(subscribed ? 'granted' : 'prompt')
+    }
+    checkPushState()
+  }, [])
+
+  const handleEnableNotifications = async () => {
+    const success = await subscribeToPush()
+    setPushState(success ? 'granted' : 'dismissed')
+  }
 
   const { data: myGames = [], isLoading: loadingMine } = useMyGames()
   const { data: waitingGames = [], isLoading: loadingWaiting } = useWaitingGames()
@@ -44,20 +73,42 @@ export default function Games() {
   const hasPendingGame = activeGames.length >= 1 || waitingGamesMine.length >= 2
   const myGameIds = new Set(myGames.map((g: any) => g.id))
 
+  // Open a GameSocket for each of the user's waiting games so that when an
+  // opponent joins (game_state event), the games list refreshes immediately
+  // instead of waiting up to 30 s for the next poll.
+  useEffect(() => {
+    if (!wsToken || waitingGamesMine.length === 0) return
+    console.log('[Games] opening WS for waiting games:', waitingGamesMine.map((g: any) => g.id))
+
+    const sockets = waitingGamesMine.map((g: any) => {
+      const sock = new GameSocket(g.id, wsToken)
+      sock.on(() => {
+        queryClient.invalidateQueries({ queryKey: ['games', 'waiting'] })
+        queryClient.invalidateQueries({ queryKey: ['games', 'mine'] })
+      })
+      return sock
+    })
+
+    return () => {
+      sockets.forEach(s => s.destroy())
+    }
+  // Re-run only when the set of waiting game IDs changes or the token rotates.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsToken, waitingGamesMine.map((g: any) => g.id).join(',')])
+
   const handleCreateGame = async () => {
     if (hasPendingGame) {
       addToast('You can have at most 3 active games. Finish or delete one first.', 'info')
       return
     }
     try {
-      const game = await createGame.mutateAsync({
+      await createGame.mutateAsync({
         opponent: 'person',
         player_color: color,
         time_control: timeControl,
         visibility,
       })
-      const g = game as { id: string }
-      navigate(`/game/${g.id}`)
+      addToast('Game created! Share the link below to invite someone.', 'success')
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to create game', 'error')
     }
@@ -88,7 +139,6 @@ export default function Games() {
       try {
         await navigator.share({ title: 'Join my chess game', text: 'Play chess with me!', url: link })
       } catch {
-        // user cancelled or share failed — fall back to copy
         handleCopyLink(gameId)
       }
     } else {
@@ -152,6 +202,52 @@ export default function Games() {
             <p style={{ color: 'var(--color-text-secondary)', fontSize: 14 }}>
               Join a waiting game or create your own.
             </p>
+          </div>
+        )}
+
+        {/* Global push notification banner */}
+        {pushState === 'prompt' && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '12px 16px', marginBottom: 20,
+            borderRadius: 14, border: '1px solid rgba(229,169,59,0.25)',
+            background: 'rgba(229,169,59,0.06)',
+          }}>
+            <svg viewBox="0 0 24 24" width={16} height={16} fill="none"
+              stroke="var(--color-amber)" strokeWidth={1.8}
+              strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--color-text-secondary)' }}>
+              Enable notifications to know when opponents join your games
+            </span>
+            <button
+              onClick={handleEnableNotifications}
+              style={{
+                padding: '6px 14px', borderRadius: 999, border: 'none',
+                cursor: 'pointer', background: 'var(--color-amber)',
+                color: '#1A1408', fontWeight: 600, fontSize: 12,
+                flexShrink: 0,
+              }}
+            >
+              Enable
+            </button>
+          </div>
+        )}
+
+        {pushState === 'granted' && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 16px', marginBottom: 20,
+            borderRadius: 14, border: '1px solid rgba(95,174,126,0.2)',
+            background: 'rgba(95,174,126,0.05)',
+            fontSize: 13, color: 'var(--color-green)',
+          }}>
+            <svg viewBox="0 0 24 24" width={14} height={14} fill="none"
+              stroke="currentColor" strokeWidth={2.5}>
+              <path d="M5 12l5 5 9-11" />
+            </svg>
+            Notifications enabled — you'll be alerted when opponents join your games
           </div>
         )}
 
@@ -331,67 +427,68 @@ export default function Games() {
                 const hasOpponent = g.white_player_id !== ZERO_UUID && g.black_player_id !== ZERO_UUID
                 const opponentOnline = hasOpponent && g.state === 'active'
                 return (
-                <div key={g.id} style={{
-                  display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14,
-                  padding: isMobile ? '12px 14px' : '14px 18px',
-                  background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)',
-                  borderRadius: 14, transition: 'border-color .15s ease',
-                }}>
-                  <div onClick={() => navigate(`/game/${g.id}`)} style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14, flex: 1, minWidth: 0, cursor: 'pointer' }}>
-                    <div style={{ width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: 10, overflow: 'hidden', flexShrink: 0, border: '1px solid var(--color-border-strong)' }}>
-                      <MiniBoard preset={g.state === 'active' ? 'mid' : 'early'} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>
-                          {hasOpponent ? `vs ${g.white_player_name === user?.username ? (g.black_player_name || 'Opponent') : (g.white_player_name || 'Opponent')}` : 'Waiting…'}
-                        </span>
-                        {hasOpponent && (
-                          <span style={{
-                            width: 7, height: 7, borderRadius: '50%',
-                            background: opponentOnline ? 'var(--color-green)' : 'var(--color-text-muted)',
-                          }} />
-                        )}
+                  <div key={g.id} style={{
+                    display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14,
+                    padding: isMobile ? '12px 14px' : '14px 18px',
+                    background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)',
+                    borderRadius: 14, transition: 'border-color .15s ease',
+                  }}>
+                    <div onClick={() => navigate(`/game/${g.id}`)} style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14, flex: 1, minWidth: 0, cursor: 'pointer' }}>
+                      <div style={{ width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: 10, overflow: 'hidden', flexShrink: 0, border: '1px solid var(--color-border-strong)' }}>
+                        <MiniBoard preset={g.state === 'active' ? 'mid' : 'early'} />
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                        {g.state === 'waiting' ? (
-                          'Waiting for opponent…'
-                        ) : (
-                          <span style={{ color: 'var(--color-amber)' }}>● Active game</span>
-                        )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>
+                            {hasOpponent ? `vs ${g.white_player_name === user?.username ? (g.black_player_name || 'Opponent') : (g.white_player_name || 'Opponent')}` : 'Waiting…'}
+                          </span>
+                          {hasOpponent && (
+                            <span style={{
+                              width: 7, height: 7, borderRadius: '50%',
+                              background: opponentOnline ? 'var(--color-green)' : 'var(--color-text-muted)',
+                            }} />
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                          {g.state === 'waiting' ? (
+                            'Waiting for opponent…'
+                          ) : (
+                            <span style={{ color: 'var(--color-amber)' }}>● Active game</span>
+                          )}
+                        </div>
                       </div>
+                      <span style={{
+                        padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600,
+                        background: g.state === 'active' ? 'rgba(95,174,126,0.12)' : 'rgba(229,169,59,0.12)',
+                        color: g.state === 'active' ? 'var(--color-green)' : 'var(--color-amber)',
+                      }}>
+                        {g.state === 'active' ? 'Active' : 'Waiting'}
+                      </span>
+                      {!isMobile && <Icon name="arrow-right" size={16} color="var(--color-text-muted)" />}
                     </div>
-                    <span style={{
-                      padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-                      background: g.state === 'active' ? 'rgba(95,174,126,0.12)' : 'rgba(229,169,59,0.12)',
-                      color: g.state === 'active' ? 'var(--color-green)' : 'var(--color-amber)',
-                    }}>
-                      {g.state === 'active' ? 'Active' : 'Waiting'}
-                    </span>
-                    {!isMobile && <Icon name="arrow-right" size={16} color="var(--color-text-muted)" />}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={(e) => { e.stopPropagation(); handleCopyLink(g.id) }} style={{
-                      padding: isMobile ? '6px 10px' : '6px 14px', borderRadius: 8,
-                      border: '1px solid var(--color-border-strong)',
-                      background: 'var(--color-bg-base)', color: 'var(--color-text-secondary)',
-                      cursor: 'pointer', fontSize: isMobile ? 11 : 12, fontWeight: 500, whiteSpace: 'nowrap',
-                    }}>
-                      {isMobile ? 'Share' : 'Copy link'}
-                    </button>
-                    {g.state === 'waiting' && (
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteGame(g.id) }} style={{
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={(e) => { e.stopPropagation(); handleCopyLink(g.id) }} style={{
                         padding: isMobile ? '6px 10px' : '6px 14px', borderRadius: 8,
-                        border: '1px solid rgba(210,106,106,0.3)',
-                        background: 'rgba(210,106,106,0.08)', color: '#E89494',
+                        border: '1px solid var(--color-border-strong)',
+                        background: 'var(--color-bg-base)', color: 'var(--color-text-secondary)',
                         cursor: 'pointer', fontSize: isMobile ? 11 : 12, fontWeight: 500, whiteSpace: 'nowrap',
                       }}>
-                        {isMobile ? 'Del' : 'Delete'}
+                        {isMobile ? 'Share' : 'Copy link'}
                       </button>
-                    )}
+                      {g.state === 'waiting' && (
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteGame(g.id) }} style={{
+                          padding: isMobile ? '6px 10px' : '6px 14px', borderRadius: 8,
+                          border: '1px solid rgba(210,106,106,0.3)',
+                          background: 'rgba(210,106,106,0.08)', color: '#E89494',
+                          cursor: 'pointer', fontSize: isMobile ? 11 : 12, fontWeight: 500, whiteSpace: 'nowrap',
+                        }}>
+                          {isMobile ? 'Del' : 'Delete'}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )})}
+                )
+              })}
             </div>
           </div>
         )}

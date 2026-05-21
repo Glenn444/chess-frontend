@@ -96,7 +96,7 @@ export function useWaitingGames() {
   return useQuery({
     queryKey: ['games', 'waiting'],
     queryFn: () => api.listGames(),
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   })
 }
 
@@ -105,7 +105,7 @@ export function useMyGames() {
   return useQuery({
     queryKey: ['games', 'mine'],
     queryFn: () => api.myGames(),
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   })
 }
 

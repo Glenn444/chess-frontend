@@ -199,6 +199,7 @@ export interface SigninResponse {
 }
 
 export interface MeResponse {
+  user_id: string
   created_at: string
   email: string
   email_confirmed: boolean
