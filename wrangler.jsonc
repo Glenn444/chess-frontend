@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "chess-react",
+  "pages_build_output_dir": "dist",
+  "compatibility_date": "2024-09-23",
+  "vars": {
+    "VITE_VAPID_PUBLIC_KEY": "BKsEXxIo_T-JLdJxB5KHxlJzfeCbY8EPeEp3ENSDttaBJjtr5-mq9htc4bGJJR8u6vu9yIoFuoQr-LbeOUfXklg"
+  }
+}
