@@ -22,7 +22,6 @@ import { api, type Game, parseBoardState, fetchFreshToken } from '../lib/api'
 import { useToasts } from '../lib/toastStore'
 import { getHints, INITIAL_POSITION } from '../lib/chess'
 import { useGameChat, useGetMoves } from '../lib/queries'
-import { useMobileNav } from '../lib/mobileNavStore'
 import Piece from '../components/Piece'
 import { playSelect, playGameStart, playLowTime } from '../hooks/useSounds'
 
@@ -61,7 +60,6 @@ export default function GameScreen() {
   // manualFlip: null means "use auto orientation", true/false means user manually toggled
   const [manualFlip, setManualFlip] = useState<boolean | null>(null)
   const isMobile = useIsMobile()
-  const openNav = useMobileNav(s => s.openNav)
   const [sheet, setSheet] = useState<'chat' | 'moves' | 'actions' | 'theme' | null>(null)
   const [unreadChats, setUnreadChats] = useState(0)
   const seenMsgIds = useRef(new Set<string>())
@@ -216,10 +214,10 @@ export default function GameScreen() {
   useEffect(() => {
     const onResize = () => {
       const w = window.innerWidth
-      const maxFromHeight = Math.max(280, window.innerHeight - (isMobile ? 340 : 288))
+      const maxFromHeight = Math.max(280, window.innerHeight - (isMobile ? 284 : 288))
       let sizeFromWidth: number
-      if (w < 480) sizeFromWidth = Math.min(w - 24, 360)
-      else if (w < 860) sizeFromWidth = Math.min(w - 32, 480)
+      if (w < 480) sizeFromWidth = w - 12
+      else if (w < 860) sizeFromWidth = Math.min(w - 32, 560)
       else {
         // Desktop: subtract the actual fixed chrome around the board —
         // sidebar (220) + main padding/gaps (~80) + right rail (320) and,
@@ -230,8 +228,12 @@ export default function GameScreen() {
       setBoardSize(Math.min(sizeFromWidth, maxFromHeight))
     }
     onResize()
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    // Debounced: mobile browsers fire resize continuously while the URL bar
+    // animates — recomputing the board each frame makes play feel jumpy.
+    let t: ReturnType<typeof setTimeout> | undefined
+    const debounced = () => { clearTimeout(t); t = setTimeout(onResize, 120) }
+    window.addEventListener('resize', debounced)
+    return () => { clearTimeout(t); window.removeEventListener('resize', debounced) }
   }, [isMobile])
 
   // Use a ref so the handler is never recreated and makeMove is never
@@ -390,6 +392,8 @@ export default function GameScreen() {
   // Use === 'b' so that null (unresolved) defaults to 'white', consistent with the unflipped board
   const myColor = userColor === 'b' ? 'black' : 'white'
   const opponentColor = userColor === 'b' ? 'white' : 'black'
+  const opponentUserId = isEngineGame ? undefined
+    : userColor === 'w' ? restGame?.black_player_id : restGame?.white_player_id
 
   // Live check indicator: the side to move is the one in check. Board wants
   // the checked king's SQUARE, so find it in the current position.
@@ -540,39 +544,16 @@ export default function GameScreen() {
       <div className="fade-in" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-base)' }}>
         <audio ref={voice.remoteAudioRef} autoPlay />
 
-        {/* Mobile top bar: avatar + hamburger */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px 0' }}>
-          <div style={{
-            width: 42, height: 42, borderRadius: 12, flexShrink: 0,
-            background: 'linear-gradient(135deg, var(--color-amber-light), var(--color-amber-deep))',
-            display: 'grid', placeItems: 'center',
-            color: '#1A1408', fontWeight: 700, fontSize: 17,
-            border: '2px solid rgba(229,169,59,0.4)',
-          }}>
-            {(currentUser?.username || 'P').charAt(0).toUpperCase()}
-          </div>
-          <button
-            onClick={openNav}
-            style={{
-              width: 42, height: 42, borderRadius: 12,
-              border: '1px solid var(--color-border-strong)',
-              background: 'var(--color-bg-raised)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', padding: 0,
-            }}
-          >
-            <Icon name="menu" size={20} color="var(--color-text-primary)" />
-          </button>
-        </div>
+        {/* No top bar on mobile — every pixel goes to the board; nav lives in the Actions sheet */}
 
         {voice.micDenied && !isEngineGame && (
           <div style={{ margin: '8px 12px 0', padding: '10px 14px', background: 'rgba(210,106,106,0.12)', border: '1px solid rgba(210,106,106,0.3)', borderRadius: 12, fontSize: 13, color: 'var(--color-red)', textAlign: 'center' }}>
             Microphone access is needed for voice chat. You can still play — enable it in browser settings to talk.
           </div>
         )}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 8px', gap: 10 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: 'calc(8px + env(safe-area-inset-top)) 6px calc(76px + env(safe-area-inset-bottom))', gap: 8 }}>
           <CompactPlayerStrip
-            player={{ name: opponentName, rating: isEngineGame ? `Level ${stockfishLevel}` : '—', avatarColor: 'rose', online: isEngineGame || !opponentDisconnected, color: opponentColor }}
+            player={{ name: opponentName, rating: isEngineGame ? `Level ${stockfishLevel}` : '—', avatarColor: 'rose', online: isEngineGame || !opponentDisconnected, color: opponentColor, userId: opponentUserId }}
             isTurn={!isMyTurn}
             remainingMs={opponentMs}
             unlimited={unlimited}
@@ -623,7 +604,7 @@ export default function GameScreen() {
           </div>
 
           <CompactPlayerStrip
-            player={{ name: currentUser?.username || 'You', rating: String(currentUser?.rating ?? 1200), avatarColor: 'amber', online: true, color: myColor }}
+            player={{ name: currentUser?.username || 'You', rating: String(currentUser?.rating ?? 1200), avatarColor: 'amber', online: true, color: myColor, userId: currentUser?.user_id }}
             isTurn={isMyTurn}
             remainingMs={myMs}
             unlimited={unlimited}
@@ -644,7 +625,7 @@ export default function GameScreen() {
 
         {/* Floating dock */}
         <div style={{
-          position: 'fixed', bottom: 'calc(12px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 50,
+          position: 'fixed', bottom: 'calc(6px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 50,
           display: 'flex', gap: 4, padding: 6,
           background: 'rgba(22,24,31,0.94)', border: '1px solid var(--color-border-strong)',
           borderRadius: 999, backdropFilter: 'blur(12px)',
@@ -719,6 +700,9 @@ export default function GameScreen() {
             <button onClick={() => { setManualFlip(f => f === null ? !autoFlipped : !f); setSheet(null) }} style={{ padding: 14, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, cursor: 'pointer', fontWeight: 500 }}>
               ⇅ Flip board
             </button>
+            <button onClick={() => navigate('/games')} style={{ padding: 14, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, cursor: 'pointer', fontWeight: 500 }}>
+              <Icon name="arrow-left" size={16} /> Back to games
+            </button>
           </div>
         </BottomSheet>
         <BottomSheet open={sheet === 'theme'} onClose={() => setSheet(null)} title="Piece Theme">
@@ -779,7 +763,7 @@ export default function GameScreen() {
         <div className="game-center" style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', justifyContent: 'center', minWidth: 0 }}>
           <div className="player-card-wrap" style={{ width: '100%', maxWidth: 620 }}>
             <PlayerCard
-              player={{ name: opponentName, rating: isEngineGame ? `Level ${stockfishLevel}` : '—', color: opponentColor, online: isEngineGame || !opponentDisconnected, avatarColor: 'rose' }}
+              player={{ name: opponentName, rating: isEngineGame ? `Level ${stockfishLevel}` : '—', color: opponentColor, online: isEngineGame || !opponentDisconnected, avatarColor: 'rose', userId: opponentUserId }}
               isTurn={!isMyTurn}
               remainingMs={opponentMs}
               unlimited={unlimited}
@@ -828,7 +812,7 @@ export default function GameScreen() {
           </div>
           <div className="player-card-wrap" style={{ width: '100%', maxWidth: 620 }}>
             <PlayerCard
-              player={{ name: currentUser?.username || 'You', rating: String(currentUser?.rating ?? 1200), color: myColor, online: true, avatarColor: 'amber' }}
+              player={{ name: currentUser?.username || 'You', rating: String(currentUser?.rating ?? 1200), color: myColor, online: true, avatarColor: 'amber', userId: currentUser?.user_id }}
               isTurn={isMyTurn}
               remainingMs={myMs}
               unlimited={unlimited}

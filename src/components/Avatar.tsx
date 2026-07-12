@@ -1,9 +1,16 @@
+import { useState, useEffect } from 'react'
+import { avatarUrl } from '../lib/api'
+
 interface AvatarProps {
   name?: string
   size?: number
   color?: 'amber' | 'blue' | 'green' | 'violet' | 'rose' | 'teal'
   ring?: boolean
   speaking?: boolean
+  /** When set, tries the user's uploaded photo first; falls back to initials. */
+  userId?: string
+  /** Bump to re-fetch after the user uploads a new photo. */
+  version?: number
 }
 
 const palette: Record<string, [string, string]> = {
@@ -15,7 +22,12 @@ const palette: Record<string, [string, string]> = {
   teal:  ['#5FC6C0', '#3F938E'],
 }
 
-export default function Avatar({ name = '?', size = 36, color = 'amber', ring = false, speaking = false }: AvatarProps) {
+export default function Avatar({ name = '?', size = 36, color = 'amber', ring = false, speaking = false, userId, version }: AvatarProps) {
+  const src = avatarUrl(userId, version)
+  const [imgFailed, setImgFailed] = useState(false)
+  // A new user/version deserves a fresh attempt.
+  useEffect(() => { setImgFailed(false) }, [src])
+
   const initials = name
     .split(' ')
     .map(p => p[0])
@@ -23,6 +35,7 @@ export default function Avatar({ name = '?', size = 36, color = 'amber', ring = 
     .slice(0, 2)
     .toUpperCase()
   const [c1, c2] = palette[color] || palette.amber
+  const showImg = !!src && !imgFailed
 
   return (
     <div
@@ -40,9 +53,19 @@ export default function Avatar({ name = '?', size = 36, color = 'amber', ring = 
         border: ring ? '2px solid var(--color-amber)' : '1px solid rgba(0,0,0,0.2)',
         boxShadow: '0 1px 0 rgba(255,255,255,0.25) inset, 0 6px 14px -8px rgba(0,0,0,0.6)',
         flexShrink: 0,
+        overflow: 'hidden',
+        position: 'relative',
       }}
     >
       {initials}
+      {showImg && (
+        <img
+          src={src}
+          alt={name}
+          onError={() => setImgFailed(true)}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      )}
     </div>
   )
 }

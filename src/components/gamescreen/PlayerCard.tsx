@@ -3,7 +3,7 @@ import Avatar from '../Avatar'
 import { useCountdown, formatClock } from '../../hooks/useCountdown'
 
 export default memo(function PlayerCard({ player, isTurn, remainingMs, unlimited, gameActive, onFlag }: {
-  player: { name: string; rating: string; title?: string; color: string; online: boolean; avatarColor: string }
+  player: { name: string; rating: string; title?: string; color: string; online: boolean; avatarColor: string; userId?: string }
   isTurn: boolean
   remainingMs: number
   unlimited: boolean
@@ -22,7 +22,7 @@ export default memo(function PlayerCard({ player, isTurn, remainingMs, unlimited
       boxShadow: isTurn ? '0 0 0 3px rgba(229,169,59,0.18)' : 'none',
       transition: 'all .2s ease',
     }}>
-      <Avatar name={player.name} size={44} color={player.avatarColor as 'amber'} ring={isTurn} />
+      <Avatar name={player.name} size={44} color={player.avatarColor as 'amber'} ring={isTurn} userId={player.userId} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name}</div>

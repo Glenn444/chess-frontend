@@ -13,6 +13,14 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return buf
 }
 
+function sameKey(a: ArrayBuffer | null | undefined, b: ArrayBuffer): boolean {
+  if (!a) return false
+  const va = new Uint8Array(a), vb = new Uint8Array(b)
+  if (va.length !== vb.length) return false
+  for (let i = 0; i < va.length; i++) if (va[i] !== vb[i]) return false
+  return true
+}
+
 export async function subscribeToPush(): Promise<boolean> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false
 
@@ -28,12 +36,20 @@ export async function subscribeToPush(): Promise<boolean> {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as any
-    const subscription =
-      (await registration.pushManager.getSubscription()) ??
-      (await registration.pushManager.subscribe({
+
+    // A subscription created under a previous VAPID key is useless — pushes
+    // signed with the current key get rejected. Detect and re-subscribe.
+    let subscription = await registration.pushManager.getSubscription()
+    if (subscription && !sameKey(subscription.options?.applicationServerKey, vapidKey)) {
+      await subscription.unsubscribe().catch(() => {})
+      subscription = null
+    }
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: vapidKey,
-      }))
+      })
+    }
 
     const res = await fetch(`${BASE_URL}/api/push/subscribe`, {
       method: 'POST',

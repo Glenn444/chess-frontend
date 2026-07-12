@@ -13,9 +13,12 @@ export interface AuthUser {
 interface AuthState {
   user: AuthUser | null
   wsToken: string | null
+  // Bumped after an avatar upload so <Avatar> URLs bust the browser cache.
+  avatarVersion: number
 
   setUser: (user: AuthUser | null) => void
   setWsToken: (token: string) => void
+  bumpAvatarVersion: () => void
   logout: () => void
 }
 
@@ -26,7 +29,11 @@ export const useAuth = create<AuthState>((set) => ({
   // Survive page refresh — cleared on logout or browser-session end
   wsToken: sessionStorage.getItem(WS_TOKEN_KEY),
 
+  avatarVersion: 0,
+
   setUser: (user) => set({ user }),
+
+  bumpAvatarVersion: () => set(s => ({ avatarVersion: s.avatarVersion + 1 })),
 
   setWsToken: (wsToken) => {
     sessionStorage.setItem(WS_TOKEN_KEY, wsToken)

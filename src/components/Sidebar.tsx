@@ -4,6 +4,8 @@ import Icon from './icons/Icon'
 import Avatar from './Avatar'
 import { useAuth } from '../lib/authStore'
 import { useLogout } from '../lib/queries'
+import { api } from '../lib/api'
+import { useToasts } from '../lib/toastStore'
 import logoPng from '../assets/chesske-logo.png'
 
 const items = [
@@ -20,6 +22,28 @@ export default function Sidebar() {
 
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const addToast = useToasts(s => s.addToast)
+  const avatarVersion = useAuth(s => s.avatarVersion)
+  const bumpAvatarVersion = useAuth(s => s.bumpAvatarVersion)
+  const [uploading, setUploading] = useState(false)
+
+  const onAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploading(true)
+    try {
+      await api.uploadAvatar(file)
+      bumpAvatarVersion()
+      addToast('Profile photo updated!', 'success')
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Upload failed', 'error')
+    } finally {
+      setUploading(false)
+      setMenuOpen(false)
+    }
+  }
 
   const activeItem = items.find(it => active === it.k || active.startsWith(it.k + '/'))
   const displayName = user?.username || 'Player'
@@ -77,6 +101,7 @@ export default function Sidebar() {
 
       {/* Avatar card + dropdown */}
       <div ref={menuRef} style={{ position: 'relative', marginTop: 16 }}>
+        <input ref={fileRef} type="file" accept="image/*" onChange={onAvatarFile} style={{ display: 'none' }} />
         {/* Dropdown menu — renders above the card */}
         {menuOpen && (
           <div style={{
@@ -86,6 +111,22 @@ export default function Sidebar() {
             boxShadow: '0 -8px 24px -4px rgba(0,0,0,0.5)',
             zIndex: 200,
           }}>
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              style={{
+                width: '100%', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10,
+                background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+                color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 500,
+                opacity: uploading ? 0.6 : 1,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-bg-elev)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+            >
+              <Icon name="plus" size={15} color="var(--color-text-secondary)" />
+              {uploading ? 'Uploading…' : 'Change photo'}
+            </button>
+            <div style={{ height: 1, background: 'var(--color-border)' }} />
             <button
               onClick={() => { setMenuOpen(false); navigate('/dashboard') }}
               style={{
@@ -127,7 +168,7 @@ export default function Sidebar() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Avatar name={displayName} size={36} color="amber" />
+            <Avatar name={displayName} size={36} color="amber" userId={user?.user_id} version={avatarVersion} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{displayName}</div>
               <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{displayRating} · Casual</div>

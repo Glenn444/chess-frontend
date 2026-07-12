@@ -1,10 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Icon from './icons/Icon'
 import Avatar from './Avatar'
 import { useAuth } from '../lib/authStore'
 import { useLogout } from '../lib/queries'
 import { useMobileNav } from '../lib/mobileNavStore'
+import { api } from '../lib/api'
+import { useToasts } from '../lib/toastStore'
 import logoPng from '../assets/chesske-logo.png'
 
 const items = [
@@ -21,7 +23,28 @@ export default function MobileNav() {
   const active = location.pathname
 
   const displayName = user?.username || 'Player'
-  const displayRating = 1200
+  const displayRating = user?.rating ?? 1200
+  const fileRef = useRef<HTMLInputElement>(null)
+  const addToast = useToasts(s => s.addToast)
+  const avatarVersion = useAuth(s => s.avatarVersion)
+  const bumpAvatarVersion = useAuth(s => s.bumpAvatarVersion)
+  const [uploading, setUploading] = useState(false)
+
+  const onAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploading(true)
+    try {
+      await api.uploadAvatar(file)
+      bumpAvatarVersion()
+      addToast('Profile photo updated!', 'success')
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Upload failed', 'error')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const activeItem = items.find(it => active === it.k || active.startsWith(it.k + '/'))
 
@@ -123,9 +146,17 @@ export default function MobileNav() {
               border: '1px solid var(--color-border)',
             }}
           >
-            {/* Avatar */}
-            <div onClick={() => go('/dashboard')} style={{ flexShrink: 0, cursor: 'pointer' }}>
-              <Avatar name={displayName} size={38} color="amber" />
+            {/* Avatar — tap to change photo */}
+            <input ref={fileRef} type="file" accept="image/*" onChange={onAvatarFile} style={{ display: 'none' }} />
+            <div onClick={() => fileRef.current?.click()} style={{ flexShrink: 0, cursor: 'pointer', position: 'relative', opacity: uploading ? 0.5 : 1 }}>
+              <Avatar name={displayName} size={38} color="amber" userId={user?.user_id} version={avatarVersion} />
+              <div style={{
+                position: 'absolute', bottom: -3, right: -3, width: 16, height: 16, borderRadius: 8,
+                background: 'var(--color-amber)', display: 'grid', placeItems: 'center',
+                border: '2px solid var(--color-bg-raised)',
+              }}>
+                <Icon name="plus" size={9} color="#1A1408" />
+              </div>
             </div>
 
             {/* Name + rating */}

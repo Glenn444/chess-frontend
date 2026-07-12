@@ -10,6 +10,9 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       retry: 1,
+      // Tab-switching back shouldn't refetch every list at once — the
+      // simultaneous re-renders read as the whole app "jumping".
+      refetchOnWindowFocus: false,
     },
   },
 })

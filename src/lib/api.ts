@@ -475,4 +475,21 @@ export const api = {
   liveGames: (): Promise<LiveGame[]> =>
     fetch(`${BASE_URL}/games/live`)
       .then(r => { if (!r.ok) throw new Error('Failed to fetch live games'); return r.json() }),
+
+  // Profile picture — multipart upload; server crops + resizes
+  uploadAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('avatar', file)
+    return fetch(`${BASE_URL}/users/me/avatar`, { method: 'POST', body: form, credentials: 'include' })
+      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || 'Upload failed'); return r.json() })
+  },
+  deleteAvatar: () =>
+    request<{ message: string }>('DELETE', '/users/me/avatar', undefined, true),
+}
+
+// Public avatar URL for any user (404 when they haven't set one — the Avatar
+// component falls back to initials). `v` busts the browser cache after upload.
+export function avatarUrl(userId: string | undefined, v?: number): string | undefined {
+  if (!userId) return undefined
+  return `${BASE_URL}/users/${userId}/avatar${v ? `?v=${v}` : ''}`
 }

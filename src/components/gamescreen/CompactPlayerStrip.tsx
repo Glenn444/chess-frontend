@@ -3,7 +3,7 @@ import Avatar from '../Avatar'
 import { useCountdown, formatClock } from '../../hooks/useCountdown'
 
 export default memo(function CompactPlayerStrip({ player, isTurn, remainingMs, unlimited, gameActive, onFlag }: {
-  player: { name: string; rating: string; avatarColor: string; online?: boolean; color?: string }
+  player: { name: string; rating: string; avatarColor: string; online?: boolean; color?: string; userId?: string }
   isTurn: boolean
   remainingMs: number
   unlimited: boolean
@@ -21,7 +21,7 @@ export default memo(function CompactPlayerStrip({ player, isTurn, remainingMs, u
       boxShadow: isTurn ? '0 0 0 2px rgba(229,169,59,0.18)' : 'none',
       borderColor: isTurn ? 'var(--color-amber)' : 'var(--color-border)',
     }}>
-      <Avatar name={player.name} size={36} color={player.avatarColor as 'amber'} ring={isTurn} />
+      <Avatar name={player.name} size={36} color={player.avatarColor as 'amber'} ring={isTurn} userId={player.userId} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

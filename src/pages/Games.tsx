@@ -421,7 +421,7 @@ export default function Games() {
                     background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)',
                     borderRadius: 14,
                   }}>
-                    <Avatar name={g.white_player_id !== ZERO_UUID ? (g.white_player_name || 'Player') : (g.black_player_name || 'Player')} size={isMobile ? 30 : 36} color="amber" />
+                    <Avatar name={g.white_player_id !== ZERO_UUID ? (g.white_player_name || 'Player') : (g.black_player_name || 'Player')} size={isMobile ? 30 : 36} color="amber" userId={g.white_player_id !== ZERO_UUID ? g.white_player_id : g.black_player_id} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>
                         {g.white_player_id !== ZERO_UUID ? (g.white_player_name || 'Player') : (g.black_player_name || 'Player')}
