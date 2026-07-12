@@ -120,11 +120,18 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
 
         case 'make_move': {
           const mv = event.payload
-          // Play sound for opponent moves only: after opponent moves, current_player flips to us
-          const { gameState: gs, position: pos } = get()
-          if (gs?.user_color && mv.current_player === gs.user_color) {
+          // Every move sounds — yours and theirs. Your own move also arrives
+          // via this broadcast (it's the server's confirmation), so this is
+          // the one reliable place to classify it against the pre-move
+          // position: occupied destination = capture, and a pawn changing
+          // file onto an empty square is an en-passant capture.
+          const { position: pos } = get()
+          if (mv.move && pos) {
+            const from = mv.move.slice(0, 2)
+            const to = mv.move.slice(2, 4)
+            const isCapture = !!pos[to] || (pos[from]?.t === 'P' && from[0] !== to[0])
             if (mv.in_check) playCheck()
-            else if (pos?.[mv.move.slice(2, 4)]) playCapture()
+            else if (isCapture) playCapture()
             else playMove()
           }
           set(s => ({
