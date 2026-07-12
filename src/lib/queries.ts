@@ -157,6 +157,15 @@ export function useDeleteGame() {
   })
 }
 
+// ─── Live games (public, no auth) — for the spectator list ───
+export function useLiveGames() {
+  return useQuery({
+    queryKey: ['games', 'live'],
+    queryFn: () => api.liveGames(),
+    refetchInterval: 15_000,
+  })
+}
+
 // ─── Game replay (ordered UCI moves + result metadata) ───
 export function useGameReplay(gameId: string | undefined) {
   return useQuery({

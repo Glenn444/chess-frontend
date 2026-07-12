@@ -1,5 +1,12 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'https://api.chesske.com'
 
+// The spectator page is server-rendered by the Go backend. In production
+// nginx serves it on the apex domain (chesske.com/game/:id); in dev the SPA
+// doesn't own that route, so link straight to the backend.
+export function spectateUrl(gameId: string): string {
+  return import.meta.env.DEV ? `${BASE_URL}/game/${gameId}` : `/game/${gameId}`
+}
+
 // Auth is handled via HttpOnly cookies set by the server on signin.
 // The browser sends them automatically with `credentials: 'include'`.
 // No Authorization header or client-side token management needed.
@@ -149,6 +156,21 @@ export interface Game {
   visibility?: 'public' | 'private'
   opponent?: 'person' | 'stockfish'
   stockfish_level?: number
+  created_at: string
+  updated_at: string
+}
+
+// GET /games/live — public person-vs-person games currently being played
+export interface LiveGame {
+  id: string
+  white_username: string
+  white_rating: number
+  black_username: string
+  black_rating: number
+  current_player: PlayerColor
+  move_count: number
+  white_time_remaining_ms: number
+  black_time_remaining_ms: number
   created_at: string
   updated_at: string
 }
@@ -448,4 +470,9 @@ export const api = {
   publicGames: (): Promise<Game[]> =>
     fetch(`${BASE_URL}/games/public`)
       .then(r => { if (!r.ok) throw new Error('Failed to fetch public games'); return r.json() }),
+
+  // Live games — public, no auth; spectators watch these at /game/:id
+  liveGames: (): Promise<LiveGame[]> =>
+    fetch(`${BASE_URL}/games/live`)
+      .then(r => { if (!r.ok) throw new Error('Failed to fetch live games'); return r.json() }),
 }

@@ -35,14 +35,14 @@ export default function Lobby() {
     mutationFn: (gameId: string) => api.joinGame(gameId),
     onSuccess: (_, gameId) => {
       queryClient.invalidateQueries({ queryKey: ['games'] })
-      navigate(`/game/${gameId}`)
+      navigate(`/play/${gameId}`)
     },
     onError: (err) => addToast(err instanceof Error ? err.message : 'Failed to join game', 'error'),
   })
 
   const handleJoin = (gameId: string) => {
     if (!user) {
-      navigate(`/register?redirect=${encodeURIComponent(`/game/${gameId}?join=true`)}`)
+      navigate(`/register?redirect=${encodeURIComponent(`/play/${gameId}?join=true`)}`)
       return
     }
     joinMutation.mutate(gameId)

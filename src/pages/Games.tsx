@@ -7,7 +7,8 @@ import Avatar from '../components/Avatar'
 import MiniBoard from '../components/MiniBoard'
 import { useIsMobile } from '../lib/useIsMobile'
 import { useAuth } from '../lib/authStore'
-import { useMyGames, useWaitingGames, useCreateGame, useJoinGame, useDeleteGame } from '../lib/queries'
+import { useMyGames, useWaitingGames, useLiveGames, useCreateGame, useJoinGame, useDeleteGame } from '../lib/queries'
+import { spectateUrl } from '../lib/api'
 import { useToasts } from '../lib/toastStore'
 import { useMobileNav } from '../lib/mobileNavStore'
 import { subscribeToPush, isPushSubscribed } from '../lib/push'
@@ -61,6 +62,7 @@ export default function Games() {
 
   const { data: myGames = [], isLoading: loadingMine } = useMyGames()
   const { data: waitingGames = [], isLoading: loadingWaiting } = useWaitingGames()
+  const { data: liveGames = [] } = useLiveGames()
   const createGame = useCreateGame()
   const joinGame = useJoinGame()
   const deleteGame = useDeleteGame()
@@ -113,7 +115,7 @@ export default function Games() {
       })
       if (opponent === 'stockfish') {
         // Engine games start immediately — jump straight in.
-        navigate(`/game/${game.id}`)
+        navigate(`/play/${game.id}`)
       } else {
         addToast('Game created! Share the link below to invite someone.', 'success')
       }
@@ -125,14 +127,16 @@ export default function Games() {
   const handleJoinGame = async (gameId: string) => {
     try {
       await joinGame.mutateAsync(gameId)
-      navigate(`/game/${gameId}`)
+      navigate(`/play/${gameId}`)
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to join game', 'error')
     }
   }
 
   const handleCopyLink = async (gameId: string) => {
-    const link = `${window.location.origin}/game/${gameId}?join=true`
+    // The invite page is server-rendered by the backend on the apex domain —
+    // it carries og: meta tags so the link unfurls nicely in WhatsApp/X.
+    const link = `${window.location.origin}/invite/${gameId}`
     try {
       await navigator.clipboard.writeText(link)
       addToast('Game link copied!', 'success')
@@ -142,7 +146,7 @@ export default function Games() {
   }
 
   const handleShare = async (gameId: string) => {
-    const link = `${window.location.origin}/game/${gameId}?join=true`
+    const link = `${window.location.origin}/invite/${gameId}`
     if (navigator.share) {
       try {
         await navigator.share({ title: 'Join my chess game', text: 'Play chess with me!', url: link })
@@ -459,6 +463,47 @@ export default function Games() {
           })()}
         </div>
 
+        {/* Live now — watch other people's games as a spectator */}
+        {liveGames.length > 0 && (
+          <div style={{ marginBottom: 28 }}>
+            <h2 className="font-display" style={{ fontSize: isMobile ? 17 : 20, margin: '0 0 14px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: 'var(--color-red)', display: 'inline-block', animation: 'pulse 1.6s ease-in-out infinite' }} />
+              Live now — watch ({liveGames.length})
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {liveGames.map(g => (
+                <div key={g.id} style={{
+                  display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14,
+                  padding: isMobile ? '12px 14px' : '14px 18px',
+                  background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)',
+                  borderRadius: 14,
+                }}>
+                  <Avatar name={g.white_username} size={isMobile ? 30 : 36} color="amber" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {g.white_username} ({g.white_rating}) vs {g.black_username} ({g.black_rating})
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                      Move {g.move_count} · {g.white_time_remaining_ms === 0 && g.black_time_remaining_ms === 0 ? 'unlimited' : 'timed'}
+                    </div>
+                  </div>
+                  <a
+                    href={spectateUrl(g.id)}
+                    style={{
+                      padding: isMobile ? '8px 14px' : '8px 18px', borderRadius: 10,
+                      border: '1px solid var(--color-red)', background: 'rgba(210,106,106,0.12)',
+                      color: 'var(--color-red)', fontWeight: 600, fontSize: isMobile ? 12 : 13,
+                      whiteSpace: 'nowrap', textDecoration: 'none',
+                    }}
+                  >
+                    Watch
+                  </a>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* My Games — BELOW Open Games */}
         {!loadingMine && myGames.length > 0 && (
           <div style={{ marginBottom: 28 }}>
@@ -483,7 +528,7 @@ export default function Games() {
                     background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)',
                     borderRadius: 14, transition: 'border-color .15s ease',
                   }}>
-                    <div onClick={() => navigate(`/game/${g.id}`)} style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14, flex: 1, minWidth: 0, cursor: 'pointer' }}>
+                    <div onClick={() => navigate(`/play/${g.id}`)} style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14, flex: 1, minWidth: 0, cursor: 'pointer' }}>
                       <div style={{ width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: 10, overflow: 'hidden', flexShrink: 0, border: '1px solid var(--color-border-strong)' }}>
                         <MiniBoard preset={g.state === 'active' ? 'mid' : 'early'} />
                       </div>

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { PieceThemeProvider } from './lib/PieceThemeContext'
 import { useAuth } from './lib/authStore'
@@ -18,6 +18,14 @@ import Events from './pages/Events'
 import EventDetail from './pages/EventDetail'
 import Admin from './pages/Admin'
 import VerifyEmail from './pages/VerifyEmail'
+
+// Old share links pointed at /game/:id?join=true — in production that path is
+// the backend's spectator page, but on pages.dev/dev the SPA still owns it.
+function LegacyGameRedirect() {
+  const { id } = useParams()
+  const { search } = useLocation()
+  return <Navigate to={`/play/${id}${search}`} replace />
+}
 
 function SplashScreen() {
   return (
@@ -78,8 +86,11 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
-        <Route path="/game/:id" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
-        <Route path="/game" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
+        {/* /game/:id belongs to the server-rendered spectator page in production
+            (nginx routes it to the Go backend) — the app plays at /play/:id. */}
+        <Route path="/play/:id" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
+        <Route path="/play" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
+        <Route path="/game/:id" element={<LegacyGameRedirect />} />
         <Route path="/replay/:id" element={<ProtectedRoute><Replay /></ProtectedRoute>} />
       </Routes>
       <ToastContainer />
