@@ -57,6 +57,9 @@ interface LiveGameStore {
   gameState: LiveGameState | null
   position: Position | null
   moves: LiveMove[]
+  // Number of moves already played before this socket session started —
+  // moves[i] is the (moveOffset + i)-th move of the game overall.
+  moveOffset: number
   chatMessages: ChatMessage[]
   error: string | null
   opponentDisconnected: boolean
@@ -75,6 +78,7 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
   gameState: null,
   position: null,
   moves: [],
+  moveOffset: 0,
   chatMessages: [],
   error: null,
   opponentDisconnected: false,
@@ -108,7 +112,9 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
             black_time_remaining_ms: g.BlackTimeRemainingMs,
           }
           const pos = boardToPosition(flatBoard)
-          set({ gameState: gs, position: pos, error: null })
+          // The snapshot already reflects every move so far — live moves
+          // restart from here (important after reconnects).
+          set({ gameState: gs, position: pos, moves: [], moveOffset: g.MoveNumber ?? 0, error: null })
           break
         }
 
@@ -122,17 +128,22 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
             else playMove()
           }
           set(s => ({
-            moves: [...s.moves, mv],
-            position: s.position ? applyMove(s.position, mv.move) : null,
+            moves: mv.move ? [...s.moves, mv] : s.moves,
+            // Timeout/resign broadcasts carry an empty move — nothing to apply.
+            position: s.position && mv.move ? applyMove(s.position, mv.move) : s.position,
             gameState: s.gameState ? {
               ...s.gameState,
               current_player: mv.current_player,
               in_check: mv.in_check,
-              status: mv.is_checkmate ? 'checkmate' : mv.is_stalemate ? 'stalemate' : s.gameState.status,
+              status: mv.is_checkmate ? 'checkmate'
+                : mv.is_stalemate ? 'stalemate'
+                : mv.end_reason === 'timeout' ? 'timeout'
+                : mv.end_reason === 'resign' ? 'resign'
+                : s.gameState.status,
               white_time_remaining_ms: mv.white_time_remaining_ms,
               black_time_remaining_ms: mv.black_time_remaining_ms,
-              end_reason: mv.end_reason,
-              ended_by_player_id: mv.ended_by_player_id,
+              end_reason: mv.end_reason || s.gameState.end_reason,
+              ended_by_player_id: mv.ended_by_player_id || s.gameState.ended_by_player_id,
             } : null,
           }))
           break
@@ -163,12 +174,14 @@ export const useLiveGame = create<LiveGameStore>((set, get) => ({
       }
     })
 
-    set({ socket, position: null, moves: [], chatMessages: [], error: null, opponentDisconnected: false, myPlayerId: null })
+    // gameState must reset too — otherwise the previous game's end_reason/clock
+    // flashes a false game-over when navigating straight into a new game.
+    set({ socket, gameState: null, position: null, moves: [], moveOffset: 0, chatMessages: [], error: null, opponentDisconnected: false, myPlayerId: null })
   },
 
   disconnect: () => {
     get().socket?.destroy()
-    set({ socket: null, gameState: null, position: null, moves: [], chatMessages: [], error: null })
+    set({ socket: null, gameState: null, position: null, moves: [], moveOffset: 0, chatMessages: [], error: null })
   },
 
   makeMove: (move) => {

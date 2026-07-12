@@ -10,9 +10,6 @@ import logoPng from '../assets/chesske-logo.png'
 const items = [
   { k: '/dashboard', l: 'Home', i: 'user' as const },
   { k: '/games', l: 'Play', i: 'zap' as const },
-  { k: '/dashboard', l: 'Puzzles', i: 'puzzle' as const },
-  { k: '/dashboard', l: 'Games', i: 'clock' as const },
-  { k: '/dashboard', l: 'Leaderboard', i: 'trophy' as const },
 ]
 
 export default function MobileNav() {

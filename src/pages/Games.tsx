@@ -22,6 +22,8 @@ export default function Games() {
   const [color, setColor] = useState<'w' | 'b'>('w')
   const [timeControl, setTimeControl] = useState<0 | 5 | 10 | 15 | 30 | 45 | 60>(10)
   const [visibility, setVisibility] = useState<'public' | 'private'>('public')
+  const [opponent, setOpponent] = useState<'person' | 'stockfish'>('person')
+  const [stockfishLevel, setStockfishLevel] = useState(5)
 
   const timePresets: { label: string; minutes: 0 | 5 | 10 | 15 | 30 | 45 | 60 }[] = [
     { label: 'Unlimited', minutes: 0  },
@@ -98,17 +100,23 @@ export default function Games() {
 
   const handleCreateGame = async () => {
     if (hasPendingGame) {
-      addToast('You can have at most 3 active games. Finish or delete one first.', 'info')
+      addToast('You can have at most 1 active game and 2 waiting games. Finish or delete one first.', 'info')
       return
     }
     try {
-      await createGame.mutateAsync({
-        opponent: 'person',
+      const game = await createGame.mutateAsync({
+        opponent,
         player_color: color,
         time_control: timeControl,
         visibility,
+        ...(opponent === 'stockfish' ? { stockfish_level: stockfishLevel } : {}),
       })
-      addToast('Game created! Share the link below to invite someone.', 'success')
+      if (opponent === 'stockfish') {
+        // Engine games start immediately — jump straight in.
+        navigate(`/game/${game.id}`)
+      } else {
+        addToast('Game created! Share the link below to invite someone.', 'success')
+      }
     } catch (err) {
       addToast(err instanceof Error ? err.message : 'Failed to create game', 'error')
     }
@@ -272,6 +280,41 @@ export default function Games() {
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: 12, flexWrap: 'wrap' }}>
+            {/* Opponent selector */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {([
+                { k: 'person' as const, l: 'Friend', icon: 'chat' as const },
+                { k: 'stockfish' as const, l: 'Stockfish', icon: 'zap' as const },
+              ]).map(o => (
+                <button key={o.k} onClick={() => setOpponent(o.k)} disabled={hasPendingGame} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', minHeight: 44,
+                  borderRadius: 12, cursor: hasPendingGame ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 500,
+                  border: opponent === o.k ? '1.5px solid var(--color-amber)' : '1px solid var(--color-border-strong)',
+                  background: opponent === o.k ? 'rgba(229,169,59,0.08)' : 'var(--color-bg-elev)',
+                  color: 'var(--color-text-primary)',
+                  opacity: hasPendingGame ? 0.5 : 1,
+                }}>
+                  <Icon name={o.icon} size={14} color={opponent === o.k ? 'var(--color-amber)' : 'var(--color-text-muted)'} />
+                  {o.l}
+                </button>
+              ))}
+            </div>
+
+            {/* Stockfish level (engine games only) */}
+            {opponent === 'stockfish' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 12, border: '1px solid var(--color-border-strong)', background: 'var(--color-bg-elev)' }}>
+                <span style={{ fontSize: 13, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>Level</span>
+                <input
+                  type="range" min={0} max={20} step={1}
+                  value={stockfishLevel}
+                  onChange={e => setStockfishLevel(Number(e.target.value))}
+                  disabled={hasPendingGame}
+                  style={{ width: isMobile ? '100%' : 140, accentColor: 'var(--color-amber)' }}
+                />
+                <span className="font-mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-amber)', minWidth: 22, textAlign: 'center' }}>{stockfishLevel}</span>
+              </div>
+            )}
+
             {/* Color selector */}
             <div style={{ display: 'flex', gap: 8 }}>
               {([
@@ -292,8 +335,8 @@ export default function Games() {
               ))}
             </div>
 
-            {/* Visibility toggle */}
-            <div style={{ display: 'flex', gap: 6 }}>
+            {/* Visibility toggle — engine games are always private */}
+            {opponent === 'person' && <div style={{ display: 'flex', gap: 6 }}>
               {([
                 { k: 'public' as const, l: 'Public' },
                 { k: 'private' as const, l: 'Private' },
@@ -308,7 +351,7 @@ export default function Games() {
                   {o.l}
                 </button>
               ))}
-            </div>
+            </div>}
 
             {/* Time control */}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -424,8 +467,15 @@ export default function Games() {
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {myGames.map((g: any) => {
-                const hasOpponent = g.white_player_id !== ZERO_UUID && g.black_player_id !== ZERO_UUID
+                const isEngine = g.opponent === 'stockfish'
+                const hasOpponent = isEngine || (g.white_player_id !== ZERO_UUID && g.black_player_id !== ZERO_UUID)
                 const opponentOnline = hasOpponent && g.state === 'active'
+                const finished = !['waiting', 'active'].includes(g.state)
+                const oppLabel = isEngine
+                  ? `vs Stockfish (level ${g.stockfish_level ?? 0})`
+                  : hasOpponent
+                    ? `vs ${g.white_player_name === user?.username ? (g.black_player_name || 'Opponent') : (g.white_player_name || 'Opponent')}`
+                    : 'Waiting…'
                 return (
                   <div key={g.id} style={{
                     display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14,
@@ -440,9 +490,9 @@ export default function Games() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontWeight: 600, fontSize: isMobile ? 13 : 14 }}>
-                            {hasOpponent ? `vs ${g.white_player_name === user?.username ? (g.black_player_name || 'Opponent') : (g.white_player_name || 'Opponent')}` : 'Waiting…'}
+                            {oppLabel}
                           </span>
-                          {hasOpponent && (
+                          {hasOpponent && !finished && (
                             <span style={{
                               width: 7, height: 7, borderRadius: '50%',
                               background: opponentOnline ? 'var(--color-green)' : 'var(--color-text-muted)',
@@ -452,6 +502,8 @@ export default function Games() {
                         <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
                           {g.state === 'waiting' ? (
                             'Waiting for opponent…'
+                          ) : finished ? (
+                            g.end_reason ? `Ended — ${g.end_reason}` : `Ended — ${g.state}`
                           ) : (
                             <span style={{ color: 'var(--color-amber)' }}>● Active game</span>
                           )}
@@ -459,25 +511,35 @@ export default function Games() {
                       </div>
                       <span style={{
                         padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-                        background: g.state === 'active' ? 'rgba(95,174,126,0.12)' : 'rgba(229,169,59,0.12)',
-                        color: g.state === 'active' ? 'var(--color-green)' : 'var(--color-amber)',
+                        background: g.state === 'active' ? 'rgba(95,174,126,0.12)' : finished ? 'rgba(255,255,255,0.06)' : 'rgba(229,169,59,0.12)',
+                        color: g.state === 'active' ? 'var(--color-green)' : finished ? 'var(--color-text-secondary)' : 'var(--color-amber)',
                       }}>
-                        {g.state === 'active' ? 'Active' : 'Waiting'}
+                        {g.state === 'active' ? 'Active' : finished ? 'Finished' : 'Waiting'}
                       </span>
                       {!isMobile && <Icon name="arrow-right" size={16} color="var(--color-text-muted)" />}
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={(e) => { e.stopPropagation(); handleCopyLink(g.id) }} style={{
-                        padding: isMobile ? '6px 10px' : '6px 14px', borderRadius: 8,
+                      {finished && (
+                        <button onClick={(e) => { e.stopPropagation(); navigate(`/replay/${g.id}`) }} style={{
+                          padding: isMobile ? '10px 12px' : '8px 16px', minHeight: 40, borderRadius: 10,
+                          border: '1px solid rgba(229,169,59,0.35)',
+                          background: 'rgba(229,169,59,0.08)', color: 'var(--color-amber)',
+                          cursor: 'pointer', fontSize: isMobile ? 11 : 12, fontWeight: 600, whiteSpace: 'nowrap',
+                        }}>
+                          Replay
+                        </button>
+                      )}
+                      {!finished && !isEngine && <button onClick={(e) => { e.stopPropagation(); handleCopyLink(g.id) }} style={{
+                        padding: isMobile ? '10px 12px' : '8px 16px', minHeight: 40, borderRadius: 10,
                         border: '1px solid var(--color-border-strong)',
                         background: 'var(--color-bg-base)', color: 'var(--color-text-secondary)',
                         cursor: 'pointer', fontSize: isMobile ? 11 : 12, fontWeight: 500, whiteSpace: 'nowrap',
                       }}>
                         {isMobile ? 'Share' : 'Copy link'}
-                      </button>
+                      </button>}
                       {g.state === 'waiting' && (
                         <button onClick={(e) => { e.stopPropagation(); handleDeleteGame(g.id) }} style={{
-                          padding: isMobile ? '6px 10px' : '6px 14px', borderRadius: 8,
+                          padding: isMobile ? '10px 12px' : '8px 16px', minHeight: 40, borderRadius: 10,
                           border: '1px solid rgba(210,106,106,0.3)',
                           background: 'rgba(210,106,106,0.08)', color: '#E89494',
                           cursor: 'pointer', fontSize: isMobile ? 11 : 12, fontWeight: 500, whiteSpace: 'nowrap',

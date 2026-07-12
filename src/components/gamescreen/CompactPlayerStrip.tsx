@@ -1,26 +1,17 @@
-import { memo, useState, useEffect } from 'react'
+import { memo } from 'react'
 import Avatar from '../Avatar'
+import { useCountdown, formatClock } from '../../hooks/useCountdown'
 
-export default memo(function CompactPlayerStrip({ player, isTurn, initialSeconds, gameActive }: {
+export default memo(function CompactPlayerStrip({ player, isTurn, remainingMs, unlimited, gameActive, onFlag }: {
   player: { name: string; rating: string; avatarColor: string; online?: boolean; color?: string }
   isTurn: boolean
-  initialSeconds: number
+  remainingMs: number
+  unlimited: boolean
   gameActive: boolean
+  onFlag?: () => void
 }) {
-  const unlimited = initialSeconds === 0
-  const [secs, setSecs] = useState(initialSeconds)
-
-  useEffect(() => { setSecs(initialSeconds) }, [initialSeconds])
-
-  useEffect(() => {
-    if (unlimited || !isTurn || !gameActive) return
-    const id = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000)
-    return () => clearInterval(id)
-  }, [unlimited, isTurn, gameActive])
-
-  const mins = Math.floor(secs / 60)
-  const lowTime = !unlimited && mins < 1
-  const display = `${mins}:${(secs % 60).toString().padStart(2, '0')}`
+  const msLeft = useCountdown(remainingMs, !unlimited && isTurn && gameActive, onFlag)
+  const lowTime = !unlimited && msLeft < 60_000
 
   return (
     <div style={{
@@ -32,7 +23,7 @@ export default memo(function CompactPlayerStrip({ player, isTurn, initialSeconds
     }}>
       <Avatar name={player.name} size={36} color={player.avatarColor as 'amber'} ring={isTurn} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 14 }}>{player.name}</div>
+        <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {player.color && (
             <>
@@ -48,18 +39,16 @@ export default memo(function CompactPlayerStrip({ player, isTurn, initialSeconds
           )}
         </div>
       </div>
-      {!unlimited && (
-        <div style={{
-          background: lowTime ? 'rgba(210,106,106,0.15)' : (isTurn ? 'rgba(229,169,59,0.12)' : 'var(--color-bg-base)'),
-          border: `1px solid ${lowTime ? 'rgba(210,106,106,0.4)' : (isTurn ? 'var(--color-amber)' : 'var(--color-border-strong)')}`,
-          padding: '6px 12px', borderRadius: 10, textAlign: 'center',
-        }}>
-          <div className="font-mono" style={{
-            fontSize: 20, fontWeight: 500,
-            color: lowTime ? 'var(--color-red)' : (isTurn ? 'var(--color-amber)' : 'var(--color-text-primary)'),
-          }}>{display}</div>
-        </div>
-      )}
+      <div style={{
+        background: lowTime ? 'rgba(210,106,106,0.15)' : (isTurn ? 'rgba(229,169,59,0.12)' : 'var(--color-bg-base)'),
+        border: `1px solid ${lowTime ? 'rgba(210,106,106,0.4)' : (isTurn ? 'var(--color-amber)' : 'var(--color-border-strong)')}`,
+        padding: '6px 12px', borderRadius: 10, textAlign: 'center',
+      }}>
+        <div className="font-mono" style={{
+          fontSize: 20, fontWeight: 500,
+          color: lowTime ? 'var(--color-red)' : (isTurn ? 'var(--color-amber)' : 'var(--color-text-primary)'),
+        }}>{unlimited ? '∞' : formatClock(msLeft)}</div>
+      </div>
     </div>
   )
 })

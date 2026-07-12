@@ -22,9 +22,9 @@ export default function ToastContainer() {
 
   return (
     <div style={{
-      position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
+      position: 'fixed', top: 'calc(12px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-      width: '100%', maxWidth: 400, pointerEvents: 'none',
+      width: 'calc(100% - 24px)', maxWidth: 400, pointerEvents: 'none',
     }}>
       {toasts.map(t => {
         const c = COLORS[t.type]
@@ -48,10 +48,12 @@ export default function ToastContainer() {
             </div>
             <button
               onClick={() => removeToast(t.id)}
+              aria-label="Dismiss"
               style={{
                 background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--color-text-muted)', padding: 0, flexShrink: 0,
-                marginTop: 1,
+                color: 'var(--color-text-muted)', flexShrink: 0,
+                // ~40px tap target without growing the toast visually
+                padding: 12, margin: -11,
               }}
             >
               <Icon name="x" size={14} />

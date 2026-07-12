@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/authStore'
+import { useMobileNav } from '../lib/mobileNavStore'
 import { useIsMobile } from '../lib/useIsMobile'
 import { useToasts } from '../lib/toastStore'
 import Avatar from '../components/Avatar'
@@ -20,6 +21,7 @@ export default function Lobby() {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
   const user = useAuth(s => s.user)
+  const openNav = useMobileNav(s => s.openNav)
   const addToast = useToasts(s => s.addToast)
   const queryClient = useQueryClient()
 
@@ -40,7 +42,7 @@ export default function Lobby() {
 
   const handleJoin = (gameId: string) => {
     if (!user) {
-      navigate(`/register?redirect=/game/${gameId}?join=true`)
+      navigate(`/register?redirect=${encodeURIComponent(`/game/${gameId}?join=true`)}`)
       return
     }
     joinMutation.mutate(gameId)
@@ -56,9 +58,26 @@ export default function Lobby() {
         borderBottom: '1px solid var(--color-border)',
         background: 'var(--color-bg-raised)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', width: 'fit-content' }} onClick={() => navigate('/')}>
-          <img src={logoPng} alt="Chesske" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-          <span className="font-display" style={{ fontSize: 18, fontWeight: 600 }}>Chesske</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', width: 'fit-content' }} onClick={() => navigate('/')}>
+            <img src={logoPng} alt="Chesske" style={{ width: 28, height: 28, objectFit: 'contain' }} />
+            <span className="font-display" style={{ fontSize: 18, fontWeight: 600 }}>Chesske</span>
+          </div>
+          {isMobile && user && (
+            <button
+              onClick={openNav}
+              aria-label="Menu"
+              style={{
+                width: 42, height: 42, borderRadius: 12,
+                border: '1px solid var(--color-border-strong)',
+                background: 'var(--color-bg-elev)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', padding: 0,
+              }}
+            >
+              <Icon name="menu" size={20} color="var(--color-text-primary)" />
+            </button>
+          )}
         </div>
       </div>
 

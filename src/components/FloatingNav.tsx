@@ -21,14 +21,15 @@ export default function FloatingNav() {
   return (
     <div style={{
       position: 'fixed',
-      bottom: '1.5rem',
+      bottom: 'calc(1rem + env(safe-area-inset-bottom))',
       left: '50%',
       transform: 'translateX(-50%)',
       zIndex: 100,
       display: 'inline-flex',
       alignItems: 'center',
-      gap: 4,
-      padding: '6px 8px',
+      gap: 2,
+      padding: '6px 6px',
+      maxWidth: 'calc(100vw - 16px)',
       background: 'rgba(255, 255, 255, 0.12)',
       backdropFilter: 'blur(20px)',
       WebkitBackdropFilter: 'blur(20px)',
@@ -47,14 +48,14 @@ export default function FloatingNav() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: 2,
-              padding: '8px 14px',
+              padding: '8px min(14px, 2.5vw)',
               borderRadius: 999,
               border: 'none',
               cursor: 'pointer',
               background: active ? '#d4a017' : 'transparent',
               color: active ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
               transition: 'all 0.2s ease',
-              minWidth: 56,
+              minWidth: 'min(56px, 16vw)',
             }}
             onMouseEnter={e => {
               if (!active) e.currentTarget.style.color = '#ffffff'

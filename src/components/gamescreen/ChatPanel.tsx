@@ -11,11 +11,12 @@ interface ChatMessage {
   senderName: string
 }
 
-export default function ChatPanel({ messages, onSend, opponentName, chatLimited = false }: {
+export default function ChatPanel({ messages, onSend, opponentName, chatLimited = false, closed = false }: {
   messages: ChatMessage[]
   onSend: (text: string) => void
   opponentName: string
   chatLimited?: boolean
+  closed?: boolean   // game ended — server deletes chat, so the input closes
 }) {
   const [input, setInput] = useState('')
   const [visibleFrom, setVisibleFrom] = useState(() => Math.max(0, messages.length - PAGE_SIZE))
@@ -150,7 +151,11 @@ export default function ChatPanel({ messages, onSend, opponentName, chatLimited 
       </div>
 
       {/* Input */}
-      {chatLimited ? (
+      {closed ? (
+        <div style={{ padding: '10px 12px', borderTop: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center' }}>
+          Chat is closed — the game has ended
+        </div>
+      ) : chatLimited ? (
         <div style={{ padding: '10px 12px', borderTop: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center' }}>
           Chat limit reached (200 messages)
         </div>

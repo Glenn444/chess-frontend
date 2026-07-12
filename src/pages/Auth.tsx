@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import Icon from '../components/icons/Icon'
 import AnimatedBoard from '../components/AnimatedBoard'
 import { loginSchema, registerSchema, forgotPasswordSchema, resetPasswordSchema, type LoginForm, type RegisterForm, type ForgotPasswordForm, type ResetPasswordForm } from '../lib/schemas'
 import { useLogin, useRegister, useForgotPassword, useResetPassword } from '../lib/queries'
+import { ApiError } from '../lib/api'
 import { api } from '../lib/api'
 import { useIsMobile } from '../lib/useIsMobile'
 import logoPng from '../assets/chesske-logo.png'
@@ -64,20 +64,6 @@ const amberBtnStyle: React.CSSProperties = {
   fontSize: 15,
   boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset, 0 -1px 0 rgba(0,0,0,0.15) inset, 0 6px 18px -6px rgba(229,169,59,0.55)',
   marginTop: 10,
-}
-
-const ghostBtnStyle: React.CSSProperties = {
-  background: 'var(--color-bg-elev)',
-  color: 'var(--color-text-primary)',
-  border: '1px solid var(--color-border-strong)',
-  borderRadius: 14,
-  padding: '14px',
-  fontWeight: 500,
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 10,
 }
 
 /* ───── Login ───── */
@@ -171,27 +157,12 @@ export function Login() {
               )
             })()}
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 4 }}>
-              <input type="checkbox" defaultChecked style={{ accentColor: 'var(--color-amber)' }} />
-              Remember me on this device
-            </label>
-
             <button type="submit" disabled={isSubmitting} style={{
               ...amberBtnStyle,
               opacity: isSubmitting ? 0.6 : 1,
               cursor: isSubmitting ? 'not-allowed' : 'pointer',
             }}>
               {isSubmitting ? 'Logging in…' : 'Log in'}
-            </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--color-text-muted)', fontSize: 12, margin: '8px 0' }}>
-              <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
-              OR
-              <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
-            </div>
-
-            <button type="button" style={ghostBtnStyle}>
-              <Icon name="globe" size={18} /> Continue with Google
             </button>
           </div>
 
@@ -516,8 +487,7 @@ export function ResetPassword() {
                   <input
                     {...register('email')}
                     placeholder="you@example.com"
-                    readOnly={!!emailFromUrl}
-                    style={{ ...inputStyle, opacity: emailFromUrl ? 0.6 : 1, cursor: emailFromUrl ? 'default' : 'text' }}
+                    style={inputStyle}
                   />
                   {errors.email && <div style={errorStyle}>{errors.email.message}</div>}
                 </label>
@@ -562,7 +532,9 @@ export function ResetPassword() {
 
                 {resetMutation.error && (
                   <div style={{ fontSize: 13, color: 'var(--color-red)', padding: '10px 14px', background: 'rgba(210,106,106,0.1)', borderRadius: 10, border: '1px solid rgba(210,106,106,0.25)' }}>
-                    {resetMutation.error instanceof Error ? resetMutation.error.message : 'Reset failed'}
+                    {resetMutation.error instanceof ApiError && resetMutation.error.status === 403
+                      ? 'Invalid or expired code — double-check the code and the email address, then try again.'
+                      : resetMutation.error instanceof Error ? resetMutation.error.message : 'Reset failed'}
                   </div>
                 )}
 

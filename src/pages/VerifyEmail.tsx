@@ -16,10 +16,11 @@ export default function VerifyEmail() {
   const verifyMutation = useVerifyEmail()
   const resendMutation = useResendOTP()
 
-  const handleVerify = async () => {
-    if (otp.length !== 6) return
+  const handleVerify = async (code?: string) => {
+    const otpCode = code ?? otp
+    if (otpCode.length !== 6) return
     try {
-      await verifyMutation.mutateAsync({ email, email_otp: otp })
+      await verifyMutation.mutateAsync({ email, email_otp: otpCode })
       setIsVerified(true)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Verification failed'
@@ -28,6 +29,7 @@ export default function VerifyEmail() {
   }
 
   const handleResend = async () => {
+    verifyMutation.reset()   // clear stale error so the confirmation shows
     try {
       await resendMutation.mutateAsync(email)
       setMessage('A new code has been sent to your email.')
@@ -37,7 +39,7 @@ export default function VerifyEmail() {
   }
 
   const inputStyle: React.CSSProperties = {
-    width: 48, height: 56, textAlign: 'center', fontSize: 22, fontWeight: 600,
+    width: 'min(48px, 11.5vw)', height: 56, textAlign: 'center', fontSize: 22, fontWeight: 600,
     background: 'var(--color-bg-base)', border: '1px solid var(--color-border-strong)',
     borderRadius: 12, color: 'var(--color-text-primary)', outline: 'none',
     fontFamily: "'JetBrains Mono', monospace",
@@ -109,9 +111,10 @@ export default function VerifyEmail() {
                   const next = e.target.parentElement?.children[i + 1] as HTMLInputElement
                   next?.focus()
                 }
-                // Auto-submit when all 6 digits filled
+                // Auto-submit when all 6 digits filled — pass the combined
+                // code directly (state hasn't committed yet)
                 if (combined.length === 6) {
-                  setTimeout(() => handleVerify(), 100)
+                  setTimeout(() => handleVerify(combined), 100)
                 }
               }}
               onKeyDown={e => {
@@ -138,7 +141,7 @@ export default function VerifyEmail() {
         )}
 
         <button
-          onClick={handleVerify}
+          onClick={() => handleVerify()}
           disabled={otp.length !== 6 || verifyMutation.isPending}
           style={{
             padding: '12px 28px', borderRadius: 14, border: 'none', cursor: otp.length === 6 ? 'pointer' : 'not-allowed',
@@ -152,7 +155,7 @@ export default function VerifyEmail() {
 
         <p style={{ marginTop: 20, color: 'var(--color-text-muted)', fontSize: 13 }}>
           Didn't receive the code?{' '}
-          <a onClick={handleResend} style={{ color: 'var(--color-amber)', cursor: 'pointer', fontWeight: 500 }}>
+          <a onClick={handleResend} style={{ color: 'var(--color-amber)', cursor: 'pointer', fontWeight: 500, display: 'inline-block', padding: '10px 8px', margin: '-10px -8px' }}>
             {resendMutation.isPending ? 'Sending…' : 'Resend'}
           </a>
         </p>

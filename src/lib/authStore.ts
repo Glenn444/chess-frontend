@@ -6,6 +6,7 @@ export interface AuthUser {
   email: string
   email_confirmed: boolean
   is_active: boolean
+  rating?: number   // Elo — present on /users/me responses
   created_at: string
 }
 

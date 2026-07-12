@@ -157,6 +157,16 @@ export function useDeleteGame() {
   })
 }
 
+// ─── Game replay (ordered UCI moves + result metadata) ───
+export function useGameReplay(gameId: string | undefined) {
+  return useQuery({
+    queryKey: ['replay', gameId],
+    queryFn: () => api.getReplay(gameId!),
+    enabled: !!gameId,
+    staleTime: Infinity,   // finished games never change
+  })
+}
+
 // ─── Game move history ───
 export function useGetMoves(gameId: string | undefined) {
   return useQuery({

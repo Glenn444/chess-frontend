@@ -103,6 +103,7 @@ export type GameState =
   | 'resign'
   | 'draw'
   | 'abandoned'
+  | 'timeout'
 
 export type PlayerColor = 'w' | 'b'
 
@@ -146,6 +147,24 @@ export interface Game {
   end_reason?: 'resign' | 'checkmate' | 'stalemate' | 'timeout' | ''
   ended_by_player_id?: string
   visibility?: 'public' | 'private'
+  opponent?: 'person' | 'stockfish'
+  stockfish_level?: number
+  created_at: string
+  updated_at: string
+}
+
+// GET /games/:id/replay — everything needed to step through a finished game
+export interface GameReplay {
+  game_id: string
+  white_player_name: string
+  black_player_name: string
+  opponent: 'person' | 'stockfish'
+  stockfish_level: number
+  state: GameState
+  end_reason: string
+  ended_by_player_id: string
+  moves: string[]            // UCI, in play order
+  move_count: number
   created_at: string
   updated_at: string
 }
@@ -206,6 +225,7 @@ export interface MeResponse {
   is_active: boolean
   last_login_at: string
   username: string
+  rating: number             // Elo, starts at 1200
 }
 
 export interface CreateGameRequest {
@@ -213,6 +233,7 @@ export interface CreateGameRequest {
   player_color: PlayerColor
   time_control: 0 | 5 | 10 | 15 | 30 | 45 | 60   // minutes; 0 = unlimited
   visibility?: 'public' | 'private'
+  stockfish_level?: number   // 0 (weakest) – 20 (full strength); engine games only
 }
 
 export interface CheckUsernameResponse {
@@ -398,6 +419,8 @@ export const api = {
                    request<Game>('POST', `/games/${id}/join`, undefined, true),
   getMoves:      (id: string) =>
                    request<GameMove[]>('GET', `/games/${id}/moves`, undefined, true),
+  getReplay:     (id: string) =>
+                   request<GameReplay>('GET', `/games/${id}/replay`, undefined, true),
   resignGame:    (id: string) =>
                    request<Game>('POST', `/games/${id}/resign`, undefined, true),
   deleteGame:    (id: string) =>

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import Icon from '../components/icons/Icon'
+import { useMobileNav } from '../lib/mobileNavStore'
 import Avatar from '../components/Avatar'
 import AnimatedBoard from '../components/AnimatedBoard'
 import { useAuth } from '../lib/authStore'
@@ -68,6 +69,7 @@ export default function Landing() {
   const navigate = useNavigate()
   const user = useAuth(s => s.user)
   const isMobile = useIsMobile()
+  const openNav = useMobileNav(s => s.openNav)
 
   const liveGames = [
     { white: { name: 'knight_rider', rating: 1547, c: 'amber' }, black: { name: 'Maya_R', rating: 1612, c: 'rose' }, moves: 14, viewers: '3', time: '10+0', opening: 'Italian Game' },
@@ -83,6 +85,21 @@ export default function Landing() {
           <img src={logoPng} alt="Chesske" style={{ width: 32, height: 32, objectFit: 'contain' }} />
           <span className="font-display" style={{ fontSize: 22, fontWeight: 600, letterSpacing: -0.3 }}>Chesske</span>
         </div>
+        {isMobile && user && (
+          <button
+            onClick={openNav}
+            aria-label="Menu"
+            style={{
+              width: 42, height: 42, borderRadius: 12,
+              border: '1px solid var(--color-border-strong)',
+              background: 'var(--color-bg-raised)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0,
+            }}
+          >
+            <Icon name="menu" size={20} color="var(--color-text-primary)" />
+          </button>
+        )}
         <div className="nav-links" style={{ display: isMobile ? 'none' : 'flex', alignItems: 'center', gap: 22, color: 'var(--color-text-secondary)', fontSize: 14 }}>
           <a onClick={() => navigate('/lobby')} style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', textDecoration: 'none' }}>Play now</a>
           <a onClick={() => navigate('/events')} style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', textDecoration: 'none' }}>Events</a>
@@ -139,7 +156,7 @@ export default function Landing() {
         <div className="landing-visual" style={{ position: 'relative', display: 'grid', placeItems: 'center' }}>
           <div className="hero-glow" style={{ position: 'absolute', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(229,169,59,0.18), transparent 70%)', filter: 'blur(40px)' }} />
           <div className="hero-board" style={{ position: 'relative', transform: 'rotate(-4deg)' }}>
-            <AnimatedBoard size={460} />
+            <AnimatedBoard size={Math.min(460, typeof window !== 'undefined' ? window.innerWidth * 0.4 : 460)} />
           </div>
           {/* floating voice chip */}
           <div className="hero-chip-voice" style={{ position: 'absolute', top: 20, right: 0, transform: 'rotate(3deg)' }}>

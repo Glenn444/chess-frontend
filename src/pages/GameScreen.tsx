@@ -23,6 +23,7 @@ import { useToasts } from '../lib/toastStore'
 import { getHints, INITIAL_POSITION } from '../lib/chess'
 import { useGameChat, useGetMoves } from '../lib/queries'
 import { useMobileNav } from '../lib/mobileNavStore'
+import Piece from '../components/Piece'
 import { playSelect, playGameStart, playLowTime } from '../hooks/useSounds'
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
@@ -55,7 +56,7 @@ export default function GameScreen() {
   const [selected, setSelected] = useState<string | null>(null)
   const selectedRef = useRef<string | null>(null)
   const [resignOpen, setResignOpen] = useState(false)
-  const [drawOffered, setDrawOffered] = useState(false)
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null)
   const [boardSize, setBoardSize] = useState(560)
   // manualFlip: null means "use auto orientation", true/false means user manually toggled
   const [manualFlip, setManualFlip] = useState<boolean | null>(null)
@@ -70,9 +71,9 @@ export default function GameScreen() {
   const displayPositionRef = useRef<import('../components/Board').Position>(INITIAL_POSITION)
   const userColorRef = useRef<'w' | 'b' | null>(null)
   const isGameOverRef = useRef(false)
+  const isMyTurnRef = useRef(false)
 
   // ── REST: chat + move history — loaded once, live updates come via WS ──
-  const { data: chatHistory } = useGameChat(gameId)
   const { data: restMoves } = useGetMoves(gameId)
 
   // ── REST: fetch game, poll only while waiting for opponent ──
@@ -96,10 +97,19 @@ export default function GameScreen() {
 
   // ── Live game state from WebSocket ──
   const {
-    gameState, position, moves: liveMoves, chatMessages,
+    gameState, position, moves: liveMoves, moveOffset, chatMessages,
     connect, disconnect, makeMove, sendChat: wsSendChat,
     opponentDisconnected, error, clearError, setMyPlayerId,
   } = useLiveGame()
+
+  // ── Engine games: the server plays Stockfish's replies automatically ──
+  const isEngineGame = restGame?.opponent === 'stockfish' || gameState?.play_against === 'stockfish'
+  const stockfishLevel = restGame?.stockfish_level ?? 0
+
+  // Chat: none in engine games, and the server deletes it once a game ends —
+  // don't fetch history in either case.
+  const restGameOver = GAME_OVER_REASONS.includes(restGame?.state ?? '')
+  const { data: chatHistory } = useGameChat(isEngineGame || restGameOver ? undefined : gameId)
 
   // ── userColor ──
   // REST UUID comparison is the ground truth: if the current user's UUID matches
@@ -107,48 +117,15 @@ export default function GameScreen() {
   // WS UserColor is used as a fallback because some backend versions send "" or
   // the wrong color for the joining player.  Username comparison is the last resort.
   const userColor = useMemo<'w' | 'b' | null>(() => {
-    console.log('[userColor] resolving —', {
-      currentUserId: currentUser?.user_id ?? '(none)',
-      currentUsername: currentUser?.username ?? '(none)',
-      whitePlayerId: restGame?.white_player_id ?? '(no restGame)',
-      blackPlayerId: restGame?.black_player_id ?? '(no restGame)',
-      whiteName: restGame?.white_player_name ?? '(none)',
-      blackName: restGame?.black_player_name ?? '(none)',
-      wsUserColor: gameState?.user_color ?? '(none)',
-    })
-
     if (restGame && currentUser?.user_id) {
-      if (restGame.white_player_id === currentUser.user_id) {
-        console.log('[userColor] → "w" via REST UUID match (white)')
-        return 'w'
-      }
-      if (restGame.black_player_id === currentUser.user_id) {
-        console.log('[userColor] → "b" via REST UUID match (black)')
-        return 'b'
-      }
-      console.log('[userColor] REST UUID check ran but found no match — IDs may be wrong or stale')
-    } else {
-      console.log('[userColor] REST UUID check skipped —', !restGame ? 'no restGame' : 'no currentUser.user_id')
+      if (restGame.white_player_id === currentUser.user_id) return 'w'
+      if (restGame.black_player_id === currentUser.user_id) return 'b'
     }
-
-    if (gameState?.user_color) {
-      console.log('[userColor] → "%s" via WS user_color', gameState.user_color)
-      return gameState.user_color
-    }
-
+    if (gameState?.user_color) return gameState.user_color
     if (restGame && currentUser) {
-      if (restGame.white_player_name === currentUser.username) {
-        console.log('[userColor] → "w" via username fallback')
-        return 'w'
-      }
-      if (restGame.black_player_name === currentUser.username) {
-        console.log('[userColor] → "b" via username fallback')
-        return 'b'
-      }
-      console.log('[userColor] username fallback found no match — white:', restGame.white_player_name, '/ black:', restGame.black_player_name)
+      if (restGame.white_player_name === currentUser.username) return 'w'
+      if (restGame.black_player_name === currentUser.username) return 'b'
     }
-
-    console.log('[userColor] → null (unresolved)')
     return null
   }, [gameState?.user_color, restGame, currentUser])
 
@@ -220,12 +197,13 @@ export default function GameScreen() {
       }
     }
     if (!gameState || !socket || voiceInitiated.current) return
+    if (isEngineGame) return   // nobody to call in an engine game
     if (userColor === 'w') {
       voiceInitiated.current = true
       voice.startCall()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameState, userColor, socket])
+  }, [gameState, userColor, socket, isEngineGame])
 
   // Disconnect only when the GameScreen unmounts
   useEffect(() => {
@@ -242,47 +220,64 @@ export default function GameScreen() {
       let sizeFromWidth: number
       if (w < 480) sizeFromWidth = Math.min(w - 24, 360)
       else if (w < 860) sizeFromWidth = Math.min(w - 32, 480)
-      else if (w < 1100) sizeFromWidth = Math.min(w - 80, 540)
-      else sizeFromWidth = Math.min(620, w * 0.42)
+      else {
+        // Desktop: subtract the actual fixed chrome around the board —
+        // sidebar (220) + main padding/gaps (~80) + right rail (320) and,
+        // above 1250px, the left rail (300+16) too.
+        const chrome = 220 + 80 + 320 + (w > 1250 ? 316 : 0)
+        sizeFromWidth = Math.min(620, Math.max(300, w - chrome))
+      }
       setBoardSize(Math.min(sizeFromWidth, maxFromHeight))
     }
     onResize()
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [])
+  }, [isMobile])
 
   // Use a ref so the handler is never recreated and makeMove is never
   // called inside a state updater (which StrictMode would double-invoke).
   const handleSquareClick = useCallback((sq: string) => {
     if (isGameOverRef.current) return   // lock board as soon as game ends
+    const uc = userColorRef.current
+    const ownColor = uc === 'w' ? 'l' : 'd'
     const prev = selectedRef.current
     if (!prev) {
-      console.log('[click] select:', sq)
+      // Only your own pieces are selectable, and only on your turn — anything
+      // else would end in a guaranteed server rejection.
+      const piece = displayPositionRef.current[sq]
+      if (!piece || uc === null || piece.c !== ownColor || !isMyTurnRef.current) return
       selectedRef.current = sq
       setSelected(sq)
       playSelect()
     } else if (prev === sq) {
-      console.log('[click] deselect')
       selectedRef.current = null
       setSelected(null)
     } else {
       // If the user clicks one of their own pieces while another is selected,
       // re-select rather than sending an illegal move that triggers an error toast.
       const destPiece = displayPositionRef.current[sq]
-      const uc = userColorRef.current
-      const ownColor = uc === 'w' ? 'l' : 'd'
       if (destPiece && uc !== null && destPiece.c === ownColor) {
-        console.log('[click] re-select:', sq)
         selectedRef.current = sq
         setSelected(sq)
         playSelect()
       } else {
-        console.log('[click] move attempt:', prev + sq)
-        makeMove(prev + sq)
+        // Pawn reaching the last rank needs a promotion piece — ask first.
+        const moving = displayPositionRef.current[prev]
+        const destRank = sq[1]
+        if (moving?.t === 'P' && ((moving.c === 'l' && destRank === '8') || (moving.c === 'd' && destRank === '1'))) {
+          setPendingPromotion({ from: prev, to: sq })
+        } else {
+          makeMove(prev + sq)
+        }
         selectedRef.current = null
         setSelected(null)
       }
     }
+  }, [makeMove])
+
+  const confirmPromotion = useCallback((p: { from: string; to: string }, piece: 'q' | 'r' | 'b' | 'n') => {
+    makeMove(p.from + p.to + piece)
+    setPendingPromotion(null)
   }, [makeMove])
 
   const handleSend = useCallback((text: string) => {
@@ -351,14 +346,30 @@ export default function GameScreen() {
     }
   }, [isChatOpen, chatForUI])
 
-  // REST move history (base) + any WS moves that happened after (new moves during this session)
+  // REST history (base) merged with live WS moves by ABSOLUTE index:
+  // liveMoves[i] is the (moveOffset + i)-th move of the game, where moveOffset
+  // came from the game_state snapshot. Plain concatenation breaks after a
+  // reload mid-game (live moves restart at 0 while base already has N).
   const allMovesForHistory = useMemo(() => {
-    const base = (restMoves ?? []).map(m => ({ move: m.move_notation, current_player: m.player_color }))
-    return [...base, ...liveMoves.slice(base.length)]
-  }, [restMoves, liveMoves])
+    const merged: { move: string; current_player: string }[] =
+      (restMoves ?? []).map(m => ({ move: m.move_notation, current_player: m.player_color }))
+    liveMoves.forEach((mv, i) => {
+      merged[moveOffset + i] = { move: mv.move, current_player: mv.current_player === 'w' ? 'b' : 'w' }
+    })
+    return merged.filter(Boolean)
+  }, [restMoves, liveMoves, moveOffset])
 
-  // Opponent name: WS first, REST fallback using correct field names
+  // If the snapshot says more moves were played than REST returned, the REST
+  // cache predates a reconnect — refresh it to fill the gap.
+  useEffect(() => {
+    if (gameId && restMoves && moveOffset > restMoves.length) {
+      queryClient.invalidateQueries({ queryKey: ['moves', gameId] })
+    }
+  }, [gameId, moveOffset, restMoves, queryClient])
+
+  // Opponent name: engine games name the engine; else WS, then REST fallback
   const opponentName = useMemo(() => {
+    if (isEngineGame) return `Stockfish (level ${stockfishLevel})`
     if (gameState?.opponent_username) return gameState.opponent_username
     if (restGame && currentUser) {
       const opp = currentUser.username === restGame.white_player_name
@@ -370,14 +381,27 @@ export default function GameScreen() {
       restGame.white_player_id !== ZERO_UUID &&
       restGame.black_player_id !== ZERO_UUID
     return hasOpponent ? 'Opponent' : 'Waiting…'
-  }, [gameState?.opponent_username, restGame, currentUser])
+  }, [isEngineGame, stockfishLevel, gameState?.opponent_username, restGame, currentUser])
 
   // Turn / color helpers — before WS connects, derive from REST current_player
   const currentPlayer = gameState?.current_player ?? restGame?.current_player
   const isMyTurn = userColor ? currentPlayer === userColor : false
+  isMyTurnRef.current = isMyTurn
   // Use === 'b' so that null (unresolved) defaults to 'white', consistent with the unflipped board
   const myColor = userColor === 'b' ? 'black' : 'white'
   const opponentColor = userColor === 'b' ? 'white' : 'black'
+
+  // Live check indicator: the side to move is the one in check. Board wants
+  // the checked king's SQUARE, so find it in the current position.
+  const inCheckNow = gameState?.in_check ?? restGame?.in_check ?? false
+  const checkedKingSquare = useMemo(() => {
+    if (!inCheckNow || !currentPlayer) return null
+    const kingColor = currentPlayer === 'w' ? 'l' : 'd'
+    for (const [sq, piece] of Object.entries(displayPosition)) {
+      if (piece.t === 'K' && piece.c === kingColor) return sq
+    }
+    return null
+  }, [inCheckNow, currentPlayer, displayPosition])
 
   // Prefer make_move.end_reason (arrives instantly with the move that ends the game).
   // Fall back to gameState.status, which is set from game_state.Status — this covers:
@@ -387,27 +411,33 @@ export default function GameScreen() {
     (gameState?.end_reason && gameState.end_reason !== '') ? gameState.end_reason
     : (gameState?.status && GAME_OVER_REASONS.includes(gameState.status)) ? gameState.status
     : null
-  console.log('[gameOver] wsEndReason:', wsEndReason, '| gameState.end_reason:', gameState?.end_reason ?? '(none)', '| gameState.status:', gameState?.status ?? '(none)', '| restGame.state:', restGame?.state ?? '(none)')
 
   const isGameOver =
     GAME_OVER_REASONS.includes(restGame?.state ?? '') ||
     !!wsEndReason
   isGameOverRef.current = isGameOver
   const gameActive = restGame?.state === 'active' && !isGameOver
-  console.log('[gameOver] isGameOver:', isGameOver, '| gameActive:', gameActive)
 
   // Timer: WS game_state is authoritative (synced on every broadcast), REST is initial value.
   const whiteMs = gameState?.white_time_remaining_ms ?? restGame?.white_time_remaining_ms ?? 600000
   const blackMs = gameState?.black_time_remaining_ms ?? restGame?.black_time_remaining_ms ?? 600000
-  const whiteInitialSeconds    = Math.floor(whiteMs / 1000)
-  const blackInitialSeconds    = Math.floor(blackMs / 1000)
-  const myInitialSeconds       = userColor === 'b' ? blackInitialSeconds : whiteInitialSeconds
-  const opponentInitialSeconds = userColor === 'b' ? whiteInitialSeconds : blackInitialSeconds
+  // Unlimited games carry zero on BOTH clocks; a timed game can only reach
+  // zero on one side (and then it's over). Never infer "unlimited" from a
+  // single clock hitting zero — that made the clock vanish at the flag.
+  const unlimited = whiteMs === 0 && blackMs === 0
+  const myMs       = userColor === 'b' ? blackMs : whiteMs
+  const opponentMs = userColor === 'b' ? whiteMs : blackMs
+
+  // When a flag falls locally, the server may end the game without a further
+  // broadcast reaching us — refetch to pick up the timeout result.
+  const onFlagFall = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+  }, [queryClient, gameId])
 
   // Game result for the end-game overlay.
   // Prefers WS end_reason (fires instantly on the move broadcast) over REST state.
   const gameResult = useMemo(() => {
-    let reason = wsEndReason || (restGame?.end_reason || '') || restGame?.state
+    const reason = wsEndReason || (restGame?.end_reason || '') || restGame?.state
     if (!reason || !GAME_OVER_REASONS.includes(reason)) return null
 
     const endedById = (gameState?.ended_by_player_id && gameState.ended_by_player_id !== '')
@@ -415,27 +445,8 @@ export default function GameScreen() {
       : restGame?.ended_by_player_id
     const currentPlayerNow = gameState?.current_player ?? restGame?.current_player
 
-    console.log('[gameResult] computing —', {
-      reason,
-      wsEndReason,
-      restGameEndReason: restGame?.end_reason,
-      restGameState: restGame?.state,
-      endedById: endedById ?? '(none)',
-      currentPlayerNow,
-      userColor,
-      myPlayerId: myPlayerId ?? '(none)',
-    })
-
     // Fallback: if backend stores timeout as state='checkmate' without setting end_reason,
     // detect it by checking which player's clock reached zero.
-    if (reason === 'checkmate' && !wsEndReason && !restGame?.end_reason) {
-      const wMs = restGame?.white_time_remaining_ms
-      const bMs = restGame?.black_time_remaining_ms
-      if ((wMs === 0 && bMs != null && bMs > 0) || (bMs === 0 && wMs != null && wMs > 0)) {
-        console.log('[gameResult] overriding checkmate → timeout (clock at zero)')
-        reason = 'timeout'
-      }
-    }
 
     if (reason === 'stalemate') return { outcome: 'draw' as const, title: 'Draw', sub: 'by stalemate' }
     if (reason === 'draw')      return { outcome: 'draw' as const, title: 'Draw', sub: '' }
@@ -443,7 +454,6 @@ export default function GameScreen() {
     if (reason === 'checkmate') {
       // current_player after checkmate = the player who was just mated (it's their turn but they can't move)
       const iLost = currentPlayerNow === userColor
-      console.log('[gameResult] checkmate — currentPlayerNow:', currentPlayerNow, '| userColor:', userColor, '| iLost:', iLost)
       return iLost
         ? { outcome: 'loss' as const, title: 'Checkmate', sub: `${opponentName} wins` }
         : { outcome: 'win' as const, title: 'Checkmate!', sub: 'You win!' }
@@ -451,15 +461,15 @@ export default function GameScreen() {
     if (reason === 'resign') {
       // ended_by_player_id = the player who resigned (loser)
       const loserIsMe = endedById === myPlayerId
-      console.log('[gameResult] resign — endedById:', endedById, '| myPlayerId:', myPlayerId, '| loserIsMe:', loserIsMe)
       return loserIsMe
         ? { outcome: 'loss' as const, title: 'You resigned', sub: `${opponentName} wins` }
         : { outcome: 'win' as const, title: `${opponentName} resigned`, sub: 'You win!' }
     }
     if (reason === 'timeout') {
-      // The player whose turn it was when time ran out is the loser — same convention as checkmate.
-      const iLost = currentPlayerNow === userColor
-      console.log('[gameResult] timeout — currentPlayerNow:', currentPlayerNow, '| userColor:', userColor, '| iLost:', iLost)
+      // Move-path timeouts stamp ended_by_player_id with the FLAGGED player;
+      // watcher timeouts leave it empty but leave current_player on the
+      // flagged player — check the id first, fall back to current_player.
+      const iLost = endedById ? endedById === myPlayerId : currentPlayerNow === userColor
       return iLost
         ? { outcome: 'loss' as const, title: "Time's up!", sub: `${opponentName} wins on time` }
         : { outcome: 'win' as const, title: 'You win on time!', sub: `${opponentName} ran out of time` }
@@ -469,11 +479,11 @@ export default function GameScreen() {
 
   // Low-time warning — once when user's clock crosses below 10 s
   useEffect(() => {
-    if (gameActive && myInitialSeconds > 0 && myInitialSeconds <= 10 && !lowTimeSoundPlayed.current) {
+    if (gameActive && !unlimited && myMs > 0 && myMs <= 10_000 && !lowTimeSoundPlayed.current) {
       lowTimeSoundPlayed.current = true
       playLowTime()
     }
-  }, [myInitialSeconds, gameActive])
+  }, [myMs, unlimited, gameActive])
 
   const lastMoveSquares = liveMoves.length > 0
     ? [liveMoves[liveMoves.length - 1].move.slice(0, 2), liveMoves[liveMoves.length - 1].move.slice(2, 4)]
@@ -490,15 +500,44 @@ export default function GameScreen() {
     )
   }
 
-  /* ──── Waiting for opponent ──── */
-  if (restGame?.state === 'waiting') {
+  /* ──── Waiting for opponent (never shown for engine games) ──── */
+  if (restGame?.state === 'waiting' && !isEngineGame) {
     return <WaitingLobby gameId={gameId!} playerColor={restGame.current_player} />
+  }
+
+  /* ──── Shared overlays ──── */
+  const promotionOverlay = pendingPromotion && (
+    <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,15,19,0.85)', display: 'grid', placeItems: 'center', borderRadius: 18, backdropFilter: 'blur(4px)', zIndex: 15 }}>
+      <div style={{ background: 'var(--color-bg-raised)', border: '1px solid var(--color-border)', borderRadius: 20, padding: 20, textAlign: 'center' }}>
+        <h3 className="font-display" style={{ fontSize: 16, margin: '0 0 12px', fontWeight: 500 }}>Promote to</h3>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          {([['q', 'Queen'], ['r', 'Rook'], ['b', 'Bishop'], ['n', 'Knight']] as const).map(([p, label]) => (
+            <button
+              key={p}
+              onClick={() => confirmPromotion(pendingPromotion, p)}
+              title={label}
+              aria-label={`Promote to ${label}`}
+              style={{ width: 56, height: 56, borderRadius: 12, border: '1px solid var(--color-border-strong)', background: 'var(--color-bg-elev)', cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+            >
+              <Piece type={p.toUpperCase()} color={userColor === 'b' ? 'dark' : 'light'} size={40} />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const handleResign = () => {
+    setResignOpen(false)
+    api.resignGame(gameId!)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['game', gameId] }))
+      .catch(() => addToast('Failed to resign', 'error'))
   }
 
   /* ──── Mobile layout ──── */
   if (isMobile) {
     return (
-      <div className="fade-in" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-base)' }}>
+      <div className="fade-in" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-base)' }}>
         <audio ref={voice.remoteAudioRef} autoPlay />
 
         {/* Mobile top bar: avatar + hamburger */}
@@ -526,16 +565,17 @@ export default function GameScreen() {
           </button>
         </div>
 
-        {voice.micDenied && (
+        {voice.micDenied && !isEngineGame && (
           <div style={{ margin: '8px 12px 0', padding: '10px 14px', background: 'rgba(210,106,106,0.12)', border: '1px solid rgba(210,106,106,0.3)', borderRadius: 12, fontSize: 13, color: 'var(--color-red)', textAlign: 'center' }}>
-            Microphone access is required to play. Please enable your microphone in browser settings.
+            Microphone access is needed for voice chat. You can still play — enable it in browser settings to talk.
           </div>
         )}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 8px', gap: 10 }}>
           <CompactPlayerStrip
-            player={{ name: opponentName, rating: '1200', avatarColor: 'rose', online: !opponentDisconnected, color: opponentColor }}
+            player={{ name: opponentName, rating: isEngineGame ? `Level ${stockfishLevel}` : '—', avatarColor: 'rose', online: isEngineGame || !opponentDisconnected, color: opponentColor }}
             isTurn={!isMyTurn}
-            initialSeconds={opponentInitialSeconds}
+            remainingMs={opponentMs}
+            unlimited={unlimited}
             gameActive={gameActive}
           />
 
@@ -546,34 +586,22 @@ export default function GameScreen() {
               selected={selected}
               hints={hints}
               lastMove={lastMoveSquares}
-              check={restGame?.in_check ? 'in_check' : null}
+              check={checkedKingSquare}
               flipped={flipped}
               onSquareClick={handleSquareClick}
             />
 
-            {drawOffered && (
-              <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,15,19,0.85)', display: 'grid', placeItems: 'center', borderRadius: 18, backdropFilter: 'blur(4px)', zIndex: 10 }}>
-                <div style={{ background: 'var(--color-bg-raised)', border: '1px solid var(--color-border)', borderRadius: 20, padding: 24, textAlign: 'center', maxWidth: 280 }}>
-                  <Icon name="handshake" size={28} color="var(--color-amber)" />
-                  <h3 className="font-display" style={{ fontSize: 18, margin: '10px 0 6px', fontWeight: 500 }}>Offer a draw?</h3>
-                  <p style={{ color: 'var(--color-text-secondary)', fontSize: 12, margin: '0 0 16px' }}>Your opponent will be asked to accept or decline.</p>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                    <button onClick={() => setDrawOffered(false)} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '10px 18px', fontWeight: 500, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
-                    <button onClick={() => setDrawOffered(false)} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '10px 18px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', fontSize: 14 }}>Send</button>
-                  </div>
-                </div>
-              </div>
-            )}
+            {promotionOverlay}
 
             {resignOpen && (
               <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,15,19,0.85)', display: 'grid', placeItems: 'center', borderRadius: 18, backdropFilter: 'blur(4px)', zIndex: 10 }}>
                 <div style={{ background: 'var(--color-bg-raised)', border: '1px solid var(--color-border)', borderRadius: 20, padding: 24, textAlign: 'center', maxWidth: 280 }}>
                   <Icon name="flag" size={28} color="var(--color-red)" />
                   <h3 className="font-display" style={{ fontSize: 18, margin: '10px 0 6px', fontWeight: 500 }}>Resign?</h3>
-                  <p style={{ color: 'var(--color-text-secondary)', fontSize: 12, margin: '0 0 16px' }}>You'll lose 16 rating points.</p>
+                  <p style={{ color: 'var(--color-text-secondary)', fontSize: 12, margin: '0 0 16px' }}>Your opponent wins the game.</p>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                     <button onClick={() => setResignOpen(false)} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '10px 18px', fontWeight: 500, cursor: 'pointer', fontSize: 14 }}>Cancel</button>
-                    <button onClick={() => { setResignOpen(false); api.resignGame(gameId!).finally(() => navigate('/dashboard')) }} style={{ background: 'rgba(210,106,106,0.12)', color: '#E89494', border: '1px solid rgba(210,106,106,0.32)', borderRadius: 12, padding: '10px 16px', fontWeight: 500, cursor: 'pointer', fontSize: 14 }}>Resign</button>
+                    <button onClick={handleResign} style={{ background: 'rgba(210,106,106,0.12)', color: '#E89494', border: '1px solid rgba(210,106,106,0.32)', borderRadius: 12, padding: '10px 16px', fontWeight: 500, cursor: 'pointer', fontSize: 14 }}>Resign</button>
                   </div>
                 </div>
               </div>
@@ -587,33 +615,42 @@ export default function GameScreen() {
                   </div>
                   <h3 className="font-display" style={{ fontSize: 20, margin: '0 0 6px', fontWeight: 500, color: gameResult.outcome === 'win' ? 'var(--color-amber)' : gameResult.outcome === 'loss' ? 'var(--color-red)' : 'var(--color-text-primary)' }}>{gameResult.title}</h3>
                   {gameResult.sub && <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, margin: '0 0 18px' }}>{gameResult.sub}</p>}
-                  <button onClick={() => navigate('/games')} style={{ width: '100%', padding: '11px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', marginTop: gameResult.sub ? 0 : 16 }}>Back to games</button>
+                  <button onClick={() => navigate(`/replay/${gameId}`)} style={{ width: '100%', padding: '11px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', marginTop: gameResult.sub ? 0 : 16 }}>Review game</button>
+                  <button onClick={() => navigate('/games')} style={{ width: '100%', padding: '11px 20px', borderRadius: 14, cursor: 'pointer', fontWeight: 500, fontSize: 14, background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', marginTop: 8 }}>Back to games</button>
                 </div>
               </div>
             )}
           </div>
 
           <CompactPlayerStrip
-            player={{ name: currentUser?.username || 'You', rating: '1200', avatarColor: 'amber', online: true, color: myColor }}
+            player={{ name: currentUser?.username || 'You', rating: String(currentUser?.rating ?? 1200), avatarColor: 'amber', online: true, color: myColor }}
             isTurn={isMyTurn}
-            initialSeconds={myInitialSeconds}
+            remainingMs={myMs}
+            unlimited={unlimited}
             gameActive={gameActive}
+            onFlag={onFlagFall}
           />
 
           <div style={{ width: '100%', maxWidth: 560 }}>
-            <StatusBar turn={isMyTurn ? 'you' : opponentName} phase={restGame?.state || 'active'} check={!!restGame?.in_check || restGame?.state === 'checkmate'} />
+            <StatusBar
+              turn={isMyTurn ? 'you' : opponentName}
+              phase={gameState?.status || restGame?.state || 'active'}
+              check={inCheckNow}
+              moveNumber={allMovesForHistory.length}
+              timeControl={unlimited ? 'Unlimited' : undefined}
+            />
           </div>
         </div>
 
         {/* Floating dock */}
         <div style={{
-          position: 'fixed', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 50,
+          position: 'fixed', bottom: 'calc(12px + env(safe-area-inset-bottom))', left: '50%', transform: 'translateX(-50%)', zIndex: 50,
           display: 'flex', gap: 4, padding: 6,
           background: 'rgba(22,24,31,0.94)', border: '1px solid var(--color-border-strong)',
           borderRadius: 999, backdropFilter: 'blur(12px)',
           boxShadow: '0 10px 30px -10px rgba(0,0,0,0.6)',
         }}>
-          <button
+          {!isEngineGame && <button
             onClick={voice.toggleMute}
             disabled={voice.status !== 'connected' && voice.status !== 'degraded'}
             style={{
@@ -628,13 +665,13 @@ export default function GameScreen() {
           >
             <Icon name={voice.muted ? 'mic-off' : 'mic'} size={18} color="currentColor" />
             <span style={{ fontSize: 9, fontWeight: 600 }}>{voice.muted ? 'Unmute' : 'Mute'}</span>
-          </button>
+          </button>}
           {([
             { k: 'chat' as const, icon: 'chat' as const, label: 'Chat', badge: unreadChats },
             { k: 'moves' as const, icon: 'clock' as const, label: 'Moves', badge: 0 },
             { k: 'actions' as const, icon: 'zap' as const, label: 'Actions', badge: 0 },
             { k: 'theme' as const, icon: 'settings' as const, label: 'Theme', badge: 0 },
-          ] as const).map(item => (
+          ] as const).filter(item => !(isEngineGame && item.k === 'chat')).map(item => (
             <button
               key={item.k}
               onClick={() => setSheet(sheet === item.k ? null : item.k)}
@@ -665,8 +702,8 @@ export default function GameScreen() {
         </div>
 
         <BottomSheet open={sheet === 'chat'} onClose={() => setSheet(null)} title="Chat">
-          <div style={{ height: 360, display: 'flex', flexDirection: 'column' }}>
-            <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} chatLimited={chatForUI.length >= 200} />
+          <div style={{ height: 'min(360px, 55dvh)', display: 'flex', flexDirection: 'column' }}>
+            <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} chatLimited={chatForUI.length >= 200} closed={isGameOver} />
           </div>
         </BottomSheet>
         <BottomSheet open={sheet === 'moves'} onClose={() => setSheet(null)} title="Move History">
@@ -676,9 +713,6 @@ export default function GameScreen() {
         </BottomSheet>
         <BottomSheet open={sheet === 'actions'} onClose={() => setSheet(null)} title="Actions">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <button onClick={() => { setDrawOffered(true); setSheet(null) }} style={{ padding: 14, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, cursor: 'pointer', fontWeight: 500 }}>
-              <Icon name="handshake" size={16} /> Offer draw
-            </button>
             <button onClick={() => { setResignOpen(true); setSheet(null) }} style={{ padding: 14, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'rgba(210,106,106,0.12)', color: '#E89494', border: '1px solid rgba(210,106,106,0.32)', borderRadius: 12, cursor: 'pointer', fontWeight: 500 }}>
               <Icon name="flag" size={16} /> Resign
             </button>
@@ -696,42 +730,59 @@ export default function GameScreen() {
 
   /* ──── Desktop layout ──── */
   return (
-    <div className="fade-in" style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <div className="fade-in" style={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
       <audio ref={voice.remoteAudioRef} autoPlay />
       <Sidebar />
-      <main className="game-main" style={{ flex: 1, padding: 24, display: 'grid', gridTemplateColumns: '300px 1fr 320px', gap: 16, alignItems: 'start', height: '100vh', overflow: 'hidden', boxSizing: 'border-box' }}>
-        {/* LEFT — voice + chat */}
-        <div className="game-left" style={{ display: 'flex', flexDirection: 'column', gap: 12, height: boardSize + 238 }}>
-          <VoiceBar
-            muted={voice.muted}
-            status={voice.status}
-            onToggleMute={voice.toggleMute}
-          />
-          <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, display: 'flex', flexDirection: 'column', flex: chatCollapsed ? 'none' : 1, height: chatCollapsed ? 48 : undefined, minHeight: 0, overflow: 'hidden', transition: 'all .2s ease' }}>
-              <div onClick={() => setChatCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', cursor: 'pointer', borderBottom: chatCollapsed ? 'none' : '1px solid var(--color-border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Icon name="chat" size={16} color="var(--color-amber)" />
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>Chat</span>
-                  {unreadChats > 0
-                    ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-red)', fontSize: 10, color: '#fff', fontWeight: 700 }}>{unreadChats > 99 ? '99+' : unreadChats}</span>
-                    : <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-bg-elev)', border: '1px solid var(--color-border-strong)', fontSize: 10, color: 'var(--color-text-secondary)' }}>{chatForUI.length}</span>
-                  }
+      <main className="game-main" style={{ flex: 1, padding: 24, display: 'grid', gap: 16, alignItems: 'start', height: '100dvh', overflow: 'hidden', boxSizing: 'border-box' }}>
+        {/* LEFT — voice + chat (or engine info) */}
+        <div className="game-left" style={{ display: 'flex', flexDirection: 'column', gap: 12, height: boardSize + 238, minWidth: 0 }}>
+          {isEngineGame ? (
+            <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(229,169,59,0.12)', border: '1px solid rgba(229,169,59,0.32)', display: 'grid', placeItems: 'center' }}>
+                  <Icon name="zap" size={18} color="var(--color-amber)" />
                 </div>
-                <Icon name={chatCollapsed ? 'arrow-right' : 'x'} size={14} color="var(--color-text-muted)" />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>Playing Stockfish</div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Level {stockfishLevel} of 20 · unrated</div>
+                </div>
               </div>
-              {!chatCollapsed && <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} chatLimited={chatForUI.length >= 200} />}
             </div>
-          </div>
+          ) : (
+            <>
+              <VoiceBar
+                muted={voice.muted}
+                status={voice.status}
+                onToggleMute={voice.toggleMute}
+              />
+              <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, display: 'flex', flexDirection: 'column', flex: chatCollapsed ? 'none' : 1, height: chatCollapsed ? 48 : undefined, minHeight: 0, overflow: 'hidden', transition: 'all .2s ease' }}>
+                  <div onClick={() => setChatCollapsed(c => !c)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', cursor: 'pointer', borderBottom: chatCollapsed ? 'none' : '1px solid var(--color-border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Icon name="chat" size={16} color="var(--color-amber)" />
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>Chat</span>
+                      {unreadChats > 0
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-red)', fontSize: 10, color: '#fff', fontWeight: 700 }}>{unreadChats > 99 ? '99+' : unreadChats}</span>
+                        : <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-bg-elev)', border: '1px solid var(--color-border-strong)', fontSize: 10, color: 'var(--color-text-secondary)' }}>{chatForUI.length}</span>
+                      }
+                    </div>
+                    <Icon name={chatCollapsed ? 'arrow-right' : 'x'} size={14} color="var(--color-text-muted)" />
+                  </div>
+                  {!chatCollapsed && <ChatPanel messages={chatForUI} onSend={handleSend} opponentName={opponentName} chatLimited={chatForUI.length >= 200} closed={isGameOver} />}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* CENTER */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', justifyContent: 'center' }}>
+        <div className="game-center" style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', justifyContent: 'center', minWidth: 0 }}>
           <div className="player-card-wrap" style={{ width: '100%', maxWidth: 620 }}>
             <PlayerCard
-              player={{ name: opponentName, rating: '1200', color: opponentColor, online: !opponentDisconnected, avatarColor: 'rose' }}
+              player={{ name: opponentName, rating: isEngineGame ? `Level ${stockfishLevel}` : '—', color: opponentColor, online: isEngineGame || !opponentDisconnected, avatarColor: 'rose' }}
               isTurn={!isMyTurn}
-              initialSeconds={opponentInitialSeconds}
+              remainingMs={opponentMs}
+              unlimited={unlimited}
               gameActive={gameActive}
             />
           </div>
@@ -742,32 +793,20 @@ export default function GameScreen() {
               selected={selected}
               hints={hints}
               lastMove={lastMoveSquares}
-              check={restGame?.in_check ? 'in_check' : null}
+              check={checkedKingSquare}
               flipped={flipped}
               onSquareClick={handleSquareClick}
             />
-            {drawOffered && (
-              <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,15,19,0.85)', display: 'grid', placeItems: 'center', borderRadius: 18, backdropFilter: 'blur(4px)', zIndex: 10 }}>
-                <div style={{ background: 'var(--color-bg-raised)', border: '1px solid var(--color-border)', borderRadius: 20, padding: 24, textAlign: 'center', maxWidth: 320 }}>
-                  <Icon name="handshake" size={32} color="var(--color-amber)" />
-                  <h3 className="font-display" style={{ fontSize: 20, margin: '10px 0 6px', fontWeight: 500 }}>Offer a draw?</h3>
-                  <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, margin: '0 0 16px' }}>Your opponent will be asked to accept or decline.</p>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                    <button onClick={() => setDrawOffered(false)} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '12px 20px', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
-                    <button onClick={() => setDrawOffered(false)} style={{ background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', fontWeight: 600, borderRadius: 14, padding: '12px 20px', border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset' }}>Send offer</button>
-                  </div>
-                </div>
-              </div>
-            )}
+            {promotionOverlay}
             {resignOpen && (
               <div style={{ position: 'absolute', inset: 0, background: 'rgba(14,15,19,0.85)', display: 'grid', placeItems: 'center', borderRadius: 18, backdropFilter: 'blur(4px)', zIndex: 10 }}>
                 <div style={{ background: 'var(--color-bg-raised)', border: '1px solid var(--color-border)', borderRadius: 20, padding: 24, textAlign: 'center', maxWidth: 320 }}>
                   <Icon name="flag" size={32} color="var(--color-red)" />
                   <h3 className="font-display" style={{ fontSize: 20, margin: '10px 0 6px', fontWeight: 500 }}>Resign the game?</h3>
-                  <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, margin: '0 0 16px' }}>You'll lose 16 rating points.</p>
+                  <p style={{ color: 'var(--color-text-secondary)', fontSize: 13, margin: '0 0 16px' }}>Your opponent wins the game.</p>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                     <button onClick={() => setResignOpen(false)} style={{ background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, padding: '12px 20px', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
-                    <button onClick={() => { setResignOpen(false); api.resignGame(gameId!).finally(() => navigate('/dashboard')) }} style={{ background: 'rgba(210,106,106,0.12)', color: '#E89494', border: '1px solid rgba(210,106,106,0.32)', borderRadius: 12, padding: '10px 16px', fontWeight: 500, cursor: 'pointer' }}>Yes, resign</button>
+                    <button onClick={handleResign} style={{ background: 'rgba(210,106,106,0.12)', color: '#E89494', border: '1px solid rgba(210,106,106,0.32)', borderRadius: 12, padding: '10px 16px', fontWeight: 500, cursor: 'pointer' }}>Yes, resign</button>
                   </div>
                 </div>
               </div>
@@ -781,21 +820,30 @@ export default function GameScreen() {
                   </div>
                   <h3 className="font-display" style={{ fontSize: 24, margin: '0 0 6px', fontWeight: 500, color: gameResult.outcome === 'win' ? 'var(--color-amber)' : gameResult.outcome === 'loss' ? 'var(--color-red)' : 'var(--color-text-primary)' }}>{gameResult.title}</h3>
                   {gameResult.sub && <p style={{ color: 'var(--color-text-secondary)', fontSize: 14, margin: '0 0 22px' }}>{gameResult.sub}</p>}
-                  <button onClick={() => navigate('/games')} style={{ width: '100%', padding: '13px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 15, background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', marginTop: gameResult.sub ? 0 : 20 }}>Back to games</button>
+                  <button onClick={() => navigate(`/replay/${gameId}`)} style={{ width: '100%', padding: '13px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 15, background: 'linear-gradient(180deg, var(--color-amber-light) 0%, var(--color-amber) 100%)', color: '#1A1408', marginTop: gameResult.sub ? 0 : 20 }}>Review game</button>
+                  <button onClick={() => navigate('/games')} style={{ width: '100%', padding: '13px 20px', borderRadius: 14, cursor: 'pointer', fontWeight: 500, fontSize: 15, background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', marginTop: 8 }}>Back to games</button>
                 </div>
               </div>
             )}
           </div>
           <div className="player-card-wrap" style={{ width: '100%', maxWidth: 620 }}>
             <PlayerCard
-              player={{ name: currentUser?.username || 'You', rating: '1200', color: myColor, online: true, avatarColor: 'amber' }}
+              player={{ name: currentUser?.username || 'You', rating: String(currentUser?.rating ?? 1200), color: myColor, online: true, avatarColor: 'amber' }}
               isTurn={isMyTurn}
-              initialSeconds={myInitialSeconds}
+              remainingMs={myMs}
+              unlimited={unlimited}
               gameActive={gameActive}
+              onFlag={onFlagFall}
             />
           </div>
           <div className="game-status-wrap" style={{ width: '100%', maxWidth: 620 }}>
-            <StatusBar turn={isMyTurn ? 'you' : opponentName} phase={restGame?.state || 'active'} check={!!restGame?.in_check || restGame?.state === 'checkmate'} />
+            <StatusBar
+              turn={isMyTurn ? 'you' : opponentName}
+              phase={gameState?.status || restGame?.state || 'active'}
+              check={inCheckNow}
+              moveNumber={allMovesForHistory.length}
+              timeControl={unlimited ? 'Unlimited' : undefined}
+            />
           </div>
         </div>
 
@@ -807,37 +855,19 @@ export default function GameScreen() {
           <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 12 }}>
             <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600, marginBottom: 8 }}>Actions</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <button onClick={() => setDrawOffered(true)} style={{ padding: 10, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, cursor: 'pointer', fontWeight: 500 }}>
-                <Icon name="handshake" size={14} /> Offer draw
-              </button>
-              <button onClick={() => setResignOpen(true)} style={{ padding: 10, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'rgba(210,106,106,0.12)', color: '#E89494', border: '1px solid rgba(210,106,106,0.32)', borderRadius: 12, cursor: 'pointer', fontWeight: 500 }}>
-                <Icon name="flag" size={14} /> Resign
-              </button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
               <button
                 onClick={() => setManualFlip(f => f === null ? !autoFlipped : !f)}
-                style={{ padding: 10, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, cursor: 'pointer', fontWeight: 500 }}
+                style={{ padding: 10, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, cursor: 'pointer', fontWeight: 500 }}
               >
                 ⇅ Flip board
               </button>
-              <button style={{ padding: 10, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'var(--color-bg-elev)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-strong)', borderRadius: 14, cursor: 'pointer', fontWeight: 500 }}>
-                <Icon name="settings" size={14} /> Settings
+              <button onClick={() => setResignOpen(true)} disabled={isGameOver} style={{ padding: 10, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'rgba(210,106,106,0.12)', color: '#E89494', border: '1px solid rgba(210,106,106,0.32)', borderRadius: 12, cursor: isGameOver ? 'default' : 'pointer', fontWeight: 500, opacity: isGameOver ? 0.5 : 1 }}>
+                <Icon name="flag" size={14} /> Resign
               </button>
             </div>
           </div>
           <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 12, overflow: 'hidden' }}>
             <PieceThemeSelector compact />
-          </div>
-          <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>Eval</div>
-              <div className="font-mono font-display" style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-green)' }}>+0.4</div>
-            </div>
-            <div style={{ flex: 1, height: 8, background: 'var(--color-bg-base)', borderRadius: 4, margin: '0 12px', overflow: 'hidden', border: '1px solid var(--color-border)' }}>
-              <div style={{ width: '54%', height: '100%', background: 'var(--color-piece-light)' }} />
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>slight edge</div>
           </div>
         </div>
       </main>

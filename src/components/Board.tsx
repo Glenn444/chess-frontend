@@ -39,9 +39,13 @@ export default memo(function Board({
   return (
     <div
       style={{
+        // aspect-ratio keeps the board square even when the parent is
+        // narrower than `size` and width clamps — a fixed height would
+        // stretch the squares into rectangles.
         width: size,
-        height: size,
         maxWidth: '100%',
+        aspectRatio: '1 / 1',
+        boxSizing: 'border-box',
         padding: 16,
         borderRadius: 18,
         border: '1px solid var(--color-border-strong)',

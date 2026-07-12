@@ -1,26 +1,17 @@
-import { memo, useState, useEffect } from 'react'
+import { memo } from 'react'
 import Avatar from '../Avatar'
+import { useCountdown, formatClock } from '../../hooks/useCountdown'
 
-export default memo(function PlayerCard({ player, isTurn, initialSeconds, gameActive }: {
+export default memo(function PlayerCard({ player, isTurn, remainingMs, unlimited, gameActive, onFlag }: {
   player: { name: string; rating: string; title?: string; color: string; online: boolean; avatarColor: string }
   isTurn: boolean
-  initialSeconds: number
+  remainingMs: number
+  unlimited: boolean
   gameActive: boolean
+  onFlag?: () => void
 }) {
-  const unlimited = initialSeconds === 0
-  const [secs, setSecs] = useState(initialSeconds)
-
-  useEffect(() => { setSecs(initialSeconds) }, [initialSeconds])
-
-  useEffect(() => {
-    if (unlimited || !isTurn || !gameActive) return
-    const id = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000)
-    return () => clearInterval(id)
-  }, [unlimited, isTurn, gameActive])
-
-  const mins = Math.floor(secs / 60)
-  const lowTime = !unlimited && mins < 1
-  const display = `${mins}:${(secs % 60).toString().padStart(2, '0')}`
+  const msLeft = useCountdown(remainingMs, !unlimited && isTurn && gameActive, onFlag)
+  const lowTime = !unlimited && msLeft < 60_000
 
   return (
     <div style={{
@@ -34,8 +25,8 @@ export default memo(function PlayerCard({ player, isTurn, initialSeconds, gameAc
       <Avatar name={player.name} size={44} color={player.avatarColor as 'amber'} ring={isTurn} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ fontWeight: 600, fontSize: 15 }}>{player.name}</div>
-          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-bg-elev)', border: '1px solid var(--color-border-strong)', fontSize: 10, color: 'var(--color-text-secondary)' }}>{player.rating}</span>
+          <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{player.name}</div>
+          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'var(--color-bg-elev)', border: '1px solid var(--color-border-strong)', fontSize: 10, color: 'var(--color-text-secondary)', flexShrink: 0 }}>{player.rating}</span>
           {player.title && <span style={{ display: 'inline-flex', alignItems: 'center', padding: '1px 7px', borderRadius: 999, background: 'rgba(229,169,59,0.1)', border: '1px solid rgba(229,169,59,0.32)', fontSize: 10, color: 'var(--color-amber-light)', fontWeight: 700 }}>{player.title}</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
@@ -44,21 +35,19 @@ export default memo(function PlayerCard({ player, isTurn, initialSeconds, gameAc
           <span style={{ fontSize: 12, color: player.online ? 'var(--color-green)' : 'var(--color-text-muted)' }}>● {player.online ? 'Online' : 'Away'}</span>
         </div>
       </div>
-      {!unlimited && (
-        <div style={{
-          background: lowTime ? 'rgba(210,106,106,0.15)' : (isTurn ? 'rgba(229,169,59,0.12)' : 'var(--color-bg-base)'),
-          border: `1px solid ${lowTime ? 'rgba(210,106,106,0.4)' : (isTurn ? 'var(--color-amber)' : 'var(--color-border-strong)')}`,
-          padding: '10px 14px', borderRadius: 12, minWidth: 88, textAlign: 'center',
-        }}>
-          <div className="font-mono font-display" style={{
-            fontSize: 24, fontWeight: 500, letterSpacing: -0.5,
-            color: lowTime ? 'var(--color-red)' : (isTurn ? 'var(--color-amber)' : 'var(--color-text-primary)'),
-          }}>{display}</div>
-          <div style={{ fontSize: 10, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2, fontWeight: 600 }}>
-            {isTurn ? 'Thinking' : 'Waiting'}
-          </div>
+      <div style={{
+        background: lowTime ? 'rgba(210,106,106,0.15)' : (isTurn ? 'rgba(229,169,59,0.12)' : 'var(--color-bg-base)'),
+        border: `1px solid ${lowTime ? 'rgba(210,106,106,0.4)' : (isTurn ? 'var(--color-amber)' : 'var(--color-border-strong)')}`,
+        padding: '10px 14px', borderRadius: 12, minWidth: 88, textAlign: 'center',
+      }}>
+        <div className="font-mono font-display" style={{
+          fontSize: 24, fontWeight: 500, letterSpacing: -0.5,
+          color: lowTime ? 'var(--color-red)' : (isTurn ? 'var(--color-amber)' : 'var(--color-text-primary)'),
+        }}>{unlimited ? '∞' : formatClock(msLeft)}</div>
+        <div style={{ fontSize: 10, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2, fontWeight: 600 }}>
+          {isTurn ? 'Thinking' : 'Waiting'}
         </div>
-      )}
+      </div>
     </div>
   )
 })

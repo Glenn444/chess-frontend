@@ -155,3 +155,26 @@ body {
   .hero-chip-voice { transform: translateX(50%) scale(0.75) !important; top: -12px !important; }
   .hero-chip-mute { transform: translateX(50%) scale(0.75) !important; bottom: -14px !important; }
 }
+
+/* ── Game screen desktop grid ──
+   >1250px: chat rail | board | moves rail.
+   861–1250px: board | moves rail on the first row, chat spans below —
+   previously the fixed 300px/320px rails crushed the board here. */
+.game-main {
+  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  grid-template-areas: "left center right";
+}
+.game-left   { grid-area: left; }
+.game-center { grid-area: center; }
+.game-right  { grid-area: right; }
+@media (max-width: 1250px) {
+  .game-main {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-areas:
+      "center right"
+      "left   right";
+    height: auto !important;
+    overflow-y: auto !important;
+  }
+  .game-left { height: auto !important; max-height: 420px; }
+}

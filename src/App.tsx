@@ -11,9 +11,9 @@ import Landing from './pages/Landing'
 import Lobby from './pages/Lobby'
 import { Login, Register, ForgotPassword, ResetPassword } from './pages/Auth'
 import Dashboard from './pages/Dashboard'
-import Matchmaking from './pages/Matchmaking'
 import GameScreen from './pages/GameScreen'
 import Games from './pages/Games'
+import Replay from './pages/Replay'
 import Events from './pages/Events'
 import EventDetail from './pages/EventDetail'
 import Admin from './pages/Admin'
@@ -40,7 +40,12 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 function GuestRoute({ children }: { children: ReactNode }) {
   const user = useAuth(s => s.user)
-  if (user) return <Navigate to="/games" replace />
+  if (user) {
+    // Honor ?redirect= so a logged-in user landing on /login?redirect=/game/x
+    // still reaches the game (e.g. shared invite links).
+    const redirect = new URLSearchParams(window.location.search).get('redirect')
+    return <Navigate to={redirect && redirect.startsWith('/') ? redirect : '/games'} replace />
+  }
   return <>{children}</>
 }
 
@@ -73,9 +78,9 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/games" element={<ProtectedRoute><Games /></ProtectedRoute>} />
-        <Route path="/matchmaking" element={<ProtectedRoute><Matchmaking /></ProtectedRoute>} />
         <Route path="/game/:id" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
         <Route path="/game" element={<ProtectedRoute><GameScreen /></ProtectedRoute>} />
+        <Route path="/replay/:id" element={<ProtectedRoute><Replay /></ProtectedRoute>} />
       </Routes>
       <ToastContainer />
       {!user && <FloatingNav />}

@@ -23,8 +23,8 @@ export default function Dashboard() {
 
   const openNav = useMobileNav(s => s.openNav)
   const displayName = user?.username || 'Player'
-  const activeGames = myGames.filter((g: any) => g.status === 'playing')
-  const waitingGames = myGames.filter((g: any) => g.status === 'waiting')
+  const activeGames = myGames.filter((g: any) => g.state === 'active')
+  const waitingGames = myGames.filter((g: any) => g.state === 'waiting')
 
   const pad = isMobile ? '16px 14px' : '30px 40px'
 
@@ -150,9 +150,13 @@ export default function Dashboard() {
 
         {/* Quick stats — real data */}
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
           gap: isMobile ? 8 : 14, marginBottom: 32,
         }}>
+          <div style={{ background: 'var(--color-bg-elev)', border: '1px solid rgba(229,169,59,0.25)', borderRadius: 16, padding: isMobile ? '14px 12px' : 20 }}>
+            <div style={{ fontSize: isMobile ? 10 : 12, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>Rating</div>
+            <div className="font-display" style={{ fontSize: isMobile ? 28 : 34, fontWeight: 500, marginTop: 4, letterSpacing: -0.5, color: 'var(--color-amber)' }}>{user?.rating ?? 1200}</div>
+          </div>
           <div style={{ background: 'var(--color-bg-elev)', border: '1px solid var(--color-border)', borderRadius: 16, padding: isMobile ? '14px 12px' : 20 }}>
             <div style={{ fontSize: isMobile ? 10 : 12, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>Active</div>
             <div className="font-display" style={{ fontSize: isMobile ? 28 : 34, fontWeight: 500, marginTop: 4, letterSpacing: -0.5, color: 'var(--color-amber)' }}>{activeGames.length}</div>
